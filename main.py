@@ -1,233 +1,457 @@
 import pygame
 import os
 
-# --- Konstanten ---
+# --- Konstanten & Konfiguration ---
 # Farben
 SCHWARZ = (0, 0, 0)
 WEISS = (255, 255, 255)
 BLAU = (0, 0, 255)
-GRUEN = (0, 255, 0) # Nur für Fallback
-ROT = (255, 0, 0)   # Nur für Fallback
+GRUEN = (0, 255, 0)
+ROT = (255, 0, 0)
+BRAUN = (139, 69, 19)
 
 FPS = 60
 TITEL = "Schul-Abenteuer"
 
-class Platform(pygame.sprite.Sprite):
+# Physik
+GRAVITY = 0.8
+PLAYER_ACC = 0.5
+PLAYER_FRICTION = -0.12
+PLAYER_MAX_SPEED = 8.0
+JUMP_FORCE = -16
+
+# Dateipfade (Konfigurierbar)
+BG_IMG_FLUR = os.path.join("sprites", "World", "Fenster.jpeg")     # Flur
+BG_IMG_TOILETTE = os.path.join("sprites", "World", "Toiletten.jpeg") # Toilette
+# Für die Tür haben wir kein klares Sprite, wir nutzen einen Platzhalter oder laden "Türen.jpeg" falls gewünscht.
+# Da "Türen.jpeg" existiert, versuchen wir es als Textur für die Tür zu nutzen, oder als Fallback.
+DOOR_TEXTURE = os.path.join("sprites", "World", "Türen.jpeg")
+
+class ResourceManager:
+    """Lädt und verwaltet Ressourcen."""
+    @staticmethod
+    def load_image(path, fallback_color=ROT):
+        try:
+            if os.path.exists(path):
+                img = pygame.image.load(path)
+                return img.convert() # Optimierung
+            else:
+                raise FileNotFoundError(f"{path} nicht gefunden")
+        except Exception as e:
+            print(f"Fehler beim Laden von {path}: {e}")
+            surf = pygame.Surface((64, 64))
+            surf.fill(fallback_color)
+            return surf
+
+class PhysicsPlayer(pygame.sprite.Sprite):
     """
-    Klasse für Plattformen (Boden, Wände).
+    Spieler-Klasse mit verbesserter Physik (Beschleunigung, Reibung).
     """
-    def __init__(self, breite, hoehe, x, y, invisible=False):
+    def __init__(self):
         super().__init__()
-        self.image = pygame.Surface([breite, hoehe])
-        if invisible:
-            # Wir machen die Surface unsichtbar, indem wir schwarz als transparent definieren
-            # oder einfach nicht zeichnen (wird im Draw-Loop gehandhabt)
-            self.image.set_colorkey(SCHWARZ)
-            self.image.fill(SCHWARZ)
-            # Alternativ mit Alpha-Kanal für komplette Transparenz
-            self.image = pygame.Surface([breite, hoehe], pygame.SRCALPHA)
-            self.image.fill((0,0,0,0))
-        else:
-            self.image.fill(GRUEN)
+        # Visuelles Erscheinungsbild
+        self.image = pygame.Surface([40, 60])
+        self.image.fill(BLAU)
+        self.rect = self.image.get_rect()
+
+        # Physik-Vektoren
+        self.pos = pygame.math.Vector2(0, 0)
+        self.vel = pygame.math.Vector2(0, 0)
+        self.acc = pygame.math.Vector2(0, 0)
+
+        # Status
+        self.on_ground = False
+
+    def jump(self):
+        if self.on_ground:
+            self.vel.y = JUMP_FORCE
+            self.on_ground = False
+
+    def update(self, keys, platforms, world_width=None):
+        self.acc = pygame.math.Vector2(0, GRAVITY)
+
+        # Eingabe
+        if keys[pygame.K_a]:
+            self.acc.x = -PLAYER_ACC
+        if keys[pygame.K_d]:
+            self.acc.x = PLAYER_ACC
+
+        # Reibung anwenden
+        self.acc.x += self.vel.x * PLAYER_FRICTION
+
+        # Bewegungsgleichungen
+        self.vel += self.acc
+
+        # Max Speed Begrenzung (Horizontal)
+        if abs(self.vel.x) > PLAYER_MAX_SPEED:
+             self.vel.x = PLAYER_MAX_SPEED if self.vel.x > 0 else -PLAYER_MAX_SPEED
+
+        # Kleine Geschwindigkeiten auf 0 setzen (gegen Zittern)
+        if abs(self.vel.x) < 0.1:
+            self.vel.x = 0
+
+        self.pos += self.vel + 0.5 * self.acc
+
+        # Position auf Rect übertragen (zuerst X)
+        self.rect.x = round(self.pos.x)
+
+        # Welt-Begrenzung (wenn angegeben)
+        if world_width is not None:
+            if self.rect.left < 0:
+                self.rect.left = 0
+                self.pos.x = self.rect.x
+                self.vel.x = 0
+            if self.rect.right > world_width:
+                self.rect.right = world_width
+                self.pos.x = self.rect.x
+                self.vel.x = 0
+
+        # Kollision X
+        hit_list = pygame.sprite.spritecollide(self, platforms, False)
+        for block in hit_list:
+            if self.vel.x > 0:
+                self.rect.right = block.rect.left
+            elif self.vel.x < 0:
+                self.rect.left = block.rect.right
+            self.pos.x = self.rect.x
+
+        # Position Y
+        self.rect.y = round(self.pos.y)
+
+        # Kollision Y
+        self.on_ground = False
+        hit_list = pygame.sprite.spritecollide(self, platforms, False)
+        for block in hit_list:
+            if self.vel.y > 0:
+                self.rect.bottom = block.rect.top
+                self.vel.y = 0
+                self.on_ground = True
+            elif self.vel.y < 0:
+                self.rect.top = block.rect.bottom
+                self.vel.y = 0
+            self.pos.y = self.rect.y
+
+class Door(pygame.sprite.Sprite):
+    def __init__(self, x, y, width=60, height=100):
+        super().__init__()
+        # Versuche Textur zu nutzen, sonst Braun
+        self.image = pygame.Surface([width, height])
+
+        # Wir laden hier keine Textur direkt, um Performance zu sparen,
+        # oder wir nutzen eine statische Ressource.
+        # Einfachheitshalber: Braunes Rechteck mit Rahmen
+        self.image.fill(BRAUN)
+        pygame.draw.rect(self.image, WEISS, (0,0,width,height), 2)
 
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = y
 
-class Player(pygame.sprite.Sprite):
-    """
-    Klasse für den Spieler.
-    """
-    def __init__(self, platforms):
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y, w, h, invisible=False):
         super().__init__()
-        self.image = pygame.Surface([40, 60])
-        self.image.fill(BLAU)
-        self.rect = self.image.get_rect()
-
-        self.change_x = 0
-        self.change_y = 0
-
-        self.platforms = platforms
-
-    def update(self):
-        self.calc_grav()
-
-        self.rect.x += self.change_x
-
-        block_hit_list = pygame.sprite.spritecollide(self, self.platforms, False)
-        for block in block_hit_list:
-            if self.change_x > 0:
-                self.rect.right = block.rect.left
-            elif self.change_x < 0:
-                self.rect.left = block.rect.right
-
-        self.rect.y += self.change_y
-
-        block_hit_list = pygame.sprite.spritecollide(self, self.platforms, False)
-        for block in block_hit_list:
-            if self.change_y > 0:
-                self.rect.bottom = block.rect.top
-                self.change_y = 0
-            elif self.change_y < 0:
-                self.rect.top = block.rect.bottom
-                self.change_y = 0
-
-    def calc_grav(self):
-        if self.change_y == 0:
-            self.change_y = 1
+        self.image = pygame.Surface((w, h))
+        if invisible:
+             self.image.set_colorkey(SCHWARZ)
+             self.image.fill(SCHWARZ)
         else:
-            self.change_y += 0.8
+            self.image.fill(GRUEN)
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
 
-    def jump(self):
-        self.rect.y += 2
-        platform_hit_list = pygame.sprite.spritecollide(self, self.platforms, False)
-        self.rect.y -= 2
+class Level:
+    """Basis-Klasse für Level."""
+    def __init__(self, screen_width, screen_height):
+        self.platforms = pygame.sprite.Group()
+        self.doors = pygame.sprite.Group()
+        self.all_sprites = pygame.sprite.Group() # Enthält keine Hintergründe
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.background_img = None
 
-        if len(platform_hit_list) > 0:
-            self.change_y = -16
+        # Boden erstellen (gemeinsam für alle Level, kann überschrieben werden)
+        floor_h = 40
+        self.floor_y = screen_height - floor_h
+        # Default Boden: unendlich breit theoretisch, hier lokal
+        self.floor = Platform(-50000, self.floor_y, 100000, floor_h, invisible=True)
+        self.platforms.add(self.floor)
 
-    def go_left(self):
-        self.change_x = -6
+    def update(self, player):
+        self.all_sprites.update()
+        self.doors.update()
 
-    def go_right(self):
-        self.change_x = 6
+    def draw(self, screen, scroll_x=0):
+        # Hintergrund zeichnen (muss implementiert werden)
+        pass
 
-    def stop(self):
-        self.change_x = 0
+    def draw_tiled_background(self, screen, img, scroll_x):
+        if not img: return
 
-def load_backgrounds(width, height):
-    bg_images = []
-    # Logische Reihenfolge: Eingang (Türen) -> Flur (Fenster) -> Klassenzimmer (Toiletten)
-    # Annahme der Reihenfolge basierend auf Dateinamen.
+        img_w = img.get_width()
+        img_h = img.get_height()
 
-    files = ["Türen.jpeg", "Fenster.jpeg", "Toiletten.jpeg"]
-    base_path = os.path.join("sprites", "World")
+        # Vertikal zentrieren oder kacheln? Anforderung: "Boden muss passend dazu positioniert werden"
+        # Wir platzieren das Bild so, dass es unten am Boden abschließt oder füllt.
+        # Option: Scale to fit height? Nein, "NICHT gestreckt".
+        # Wir platzieren es Bottom-Aligned.
 
-    colors = [WEISS, (200, 200, 200), (150, 150, 150)] # Fallback colors
+        draw_y = self.screen_height - img_h
+        # Falls das Bild kleiner als der Screen ist, füllen wir den Rest mit Schwarz oder kacheln vertikal?
+        # User sagt: "Wenn das Bild kleiner als der Bildschirm ist, soll es gekachelt (tiled) oder zentriert werden"
 
-    for i, filename in enumerate(files):
-        path = os.path.join(base_path, filename)
-        try:
-            if os.path.exists(path):
-                img = pygame.image.load(path)
-                img = pygame.transform.scale(img, (width, height))
-                bg_images.append(img)
-            else:
-                raise FileNotFoundError(f"{filename} nicht gefunden")
-        except (pygame.error, FileNotFoundError) as e:
-            print(f"Warnung: Konnte {filename} nicht laden ({e}). Nutze Platzhalter.")
-            surf = pygame.Surface((width, height))
-            surf.fill(colors[i % len(colors)])
-            bg_images.append(surf)
+        # Horizontal Tiling Logic
+        start_col = int(scroll_x // img_w)
+        end_col = int((scroll_x + self.screen_width) // img_w) + 1
 
-    return bg_images
+        for col in range(start_col, end_col + 1):
+            draw_x = col * img_w - scroll_x
+            screen.blit(img, (draw_x, draw_y))
 
-def main():
-    pygame.init()
+            # Falls Bild oben nicht reicht, Farbe füllen oder kacheln?
+            # Wir lassen es dabei.
 
-    # 1. Fenster & Display: Vollbild
-    # Wir nutzen (0, 0) und FULLSCREEN um die native Auflösung zu bekommen
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    info = pygame.display.Info()
-    BILDSCHIRM_BREITE = info.current_w
-    BILDSCHIRM_HOEHE = info.current_h
+class HallwayLevel(Level):
+    def __init__(self, screen_width, screen_height):
+        super().__init__(screen_width, screen_height)
+        self.background_img = ResourceManager.load_image(BG_IMG_FLUR, WEISS)
 
-    pygame.display.set_caption(TITEL)
+        # Türen generieren (unregelmäßig)
+        # Wir platzieren Türen alle 800 - 1500 Pixel
+        import random
+        current_x = 400
+        for _ in range(20): # Generiere erstmal Türen für eine lange Strecke
+            dist = random.randint(600, 1200)
+            current_x += dist
+            door = Door(current_x, self.floor_y - 100) # Türhöhe 100
+            self.doors.add(door)
 
-    # Hintergründe laden
-    backgrounds = load_backgrounds(BILDSCHIRM_BREITE, BILDSCHIRM_HOEHE)
+    def draw(self, screen, scroll_x):
+        screen.fill(SCHWARZ) # Fallback
+        self.draw_tiled_background(screen, self.background_img, scroll_x)
 
-    # Sprite-Gruppen
-    all_sprites = pygame.sprite.Group()
-    platforms = pygame.sprite.Group()
+        # Zeichne Sprites mit Offset
+        for sprite in self.doors:
+            # Nur zeichnen wenn im Bild
+            if sprite.rect.right - scroll_x > 0 and sprite.rect.left - scroll_x < self.screen_width:
+                screen.blit(sprite.image, (sprite.rect.x - scroll_x, sprite.rect.y))
 
-    # 3. Level-Design: Unsichtbarer Boden über gesamte Welt
-    # Weltgröße = 3 * Bildschirmbreite (da wir 3 Hintergrundbilder haben)
-    world_width = BILDSCHIRM_BREITE * 3
+class ToiletLevel(Level):
+    def __init__(self, screen_width, screen_height):
+        super().__init__(screen_width, screen_height)
+        self.background_img = ResourceManager.load_image(BG_IMG_TOILETTE, (100, 100, 100))
 
-    # Boden am unteren Bildschirmrand
-    boden_hoehe = 40
-    # Boden über die gesamte Breite der Welt
-    boden = Platform(world_width, boden_hoehe, 0, BILDSCHIRM_HOEHE - boden_hoehe, invisible=True)
-    platforms.add(boden)
-    # Wir fügen den Boden NICHT zu all_sprites hinzu, damit er nicht automatisch gezeichnet wird (oder wir handhaben es manuell)
+        # Begrenzungen (Wände)
+        left_wall = Platform(-20, 0, 20, screen_height)
+        right_wall = Platform(screen_width, 0, 20, screen_height)
+        self.platforms.add(left_wall)
+        self.platforms.add(right_wall)
 
-    # Spieler erstellen
-    player = Player(platforms)
-    player.rect.x = 100
-    # Startposition knapp über dem Boden
-    player.rect.y = BILDSCHIRM_HOEHE - boden_hoehe - player.rect.height - 10
-    all_sprites.add(player)
+        # Eine Tür zum Zurückgehen (links oder mittig?)
+        # Sagen wir am Eingang (links)
+        self.door_exit = Door(50, self.floor_y - 100)
+        self.doors.add(self.door_exit)
 
-    clock = pygame.time.Clock()
-    done = False
-
-    scroll_x = 0
-
-    while not done:
-        # Event-Handling
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                done = True
-
-            # Keydown
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    done = True
-                # 2. Steuerung: A (links), D (rechts), LEER (springen)
-                if event.key == pygame.K_a:
-                    player.go_left()
-                if event.key == pygame.K_d:
-                    player.go_right()
-                if event.key == pygame.K_SPACE:
-                    player.jump()
-
-            # Keyup
-            if event.type == pygame.KEYUP:
-                if event.key == pygame.K_a and player.change_x < 0:
-                    player.stop()
-                if event.key == pygame.K_d and player.change_x > 0:
-                    player.stop()
-
-        # Update
-        all_sprites.update()
-
-        # 4. Kamera / Scrolling
-        # Der Spieler soll sich "mittig" anfühlen.
-        # Wir berechnen scroll_x so, dass der Spieler in der Mitte des Bildschirms wäre.
-
-        target_scroll_x = player.rect.x - BILDSCHIRM_BREITE // 2
-
-        # Limits für Scrolling:
-        # Links: 0 (Start der Welt)
-        # Rechts: world_width - BILDSCHIRM_BREITE (Ende der Welt, damit man nicht ins Schwarze scrollt)
-        if target_scroll_x < 0:
-            target_scroll_x = 0
-        if target_scroll_x > world_width - BILDSCHIRM_BREITE:
-            target_scroll_x = world_width - BILDSCHIRM_BREITE
-
-        scroll_x = target_scroll_x
-
-        # Zeichnen
+    def draw(self, screen, scroll_x=0):
+        # Statischer Hintergrund (zentriert oder gekachelt)
         screen.fill(SCHWARZ)
 
-        # Hintergründe zeichnen
-        # Positionen: 0, W, 2W. Wir subtrahieren scroll_x für den Sidescrolling-Effekt.
-        for i, bg in enumerate(backgrounds):
-            bg_x = i * BILDSCHIRM_BREITE - scroll_x
-            # Performance-Optimierung: Nur zeichnen wenn im Bild
-            # Ein Bild ist sichtbar, wenn seine rechte Kante > 0 ist UND seine linke Kante < Bildschirmbreite
-            if bg_x + BILDSCHIRM_BREITE > 0 and bg_x < BILDSCHIRM_BREITE:
-                screen.blit(bg, (bg_x, 0))
+        # Zentrieren
+        if self.background_img:
+            img_w = self.background_img.get_width()
+            x_pos = (self.screen_width - img_w) // 2
+            y_pos = self.screen_height - self.background_img.get_height()
+            screen.blit(self.background_img, (x_pos, y_pos))
 
-        # Sprites zeichnen mit Offset (scroll_x)
-        for sprite in all_sprites:
-            screen.blit(sprite.image, (sprite.rect.x - scroll_x, sprite.rect.y))
+            # Falls Bild zu schmal, links rechts schwarz (ist schon so durch fill)
+            # Falls Bild zu breit, wird es abgeschnitten (Standard blit)
 
-        pygame.display.flip()
-        clock.tick(FPS)
+        for sprite in self.doors:
+            screen.blit(sprite.image, (sprite.rect.x, sprite.rect.y))
 
-    pygame.quit()
+
+class Game:
+    def __init__(self):
+        pygame.init()
+        # Fullscreen handling
+        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        info = pygame.display.Info()
+        self.screen_width = info.current_w
+        self.screen_height = info.current_h
+        pygame.display.set_caption(TITEL)
+
+        self.clock = pygame.time.Clock()
+        self.running = True
+
+        # Zustände
+        self.STATE_FLUR = "FLUR"
+        self.STATE_TOILETTE = "TOILETTE"
+        self.current_state = self.STATE_FLUR
+
+        # Level-Instanzen
+        self.level_flur = HallwayLevel(self.screen_width, self.screen_height)
+        self.level_toilette = ToiletLevel(self.screen_width, self.screen_height)
+
+        # Aktives Level
+        self.current_level = self.level_flur
+
+        # Spieler
+        self.player = PhysicsPlayer()
+        # Startposition
+        self.player.rect.x = 100
+        self.player.pos.x = 100
+        self.player.rect.y = self.screen_height - 200
+        self.player.pos.y = self.player.rect.y
+
+        # Kamera / Persistence
+        self.scroll_x = 0
+        self.saved_world_x = 0
+
+    def handle_input(self):
+        keys = pygame.key.get_pressed()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+                if event.key == pygame.K_SPACE:
+                    self.player.jump()
+
+                # Interaktion
+                if event.key == pygame.K_w:
+                    self.try_interact()
+
+        # Spieler Update (mit Physik)
+        # Im Flur ist die Welt "unendlich", in der Toilette begrenzt
+        world_limit = None
+        if self.current_state == self.STATE_TOILETTE:
+            world_limit = self.screen_width
+
+        self.player.update(keys, self.current_level.platforms, world_width=world_limit)
+
+    def try_interact(self):
+        # Prüfe Kollision mit Türen
+        # Achtung: Player ist im Screen-Space (mehr oder weniger),
+        # aber im Flur müssen wir scroll_x beachten.
+
+        player_rect = self.player.rect.copy()
+
+        if self.current_state == self.STATE_FLUR:
+            # Im Flur: Player x ist screen relative, aber Doors sind world absolute.
+            # Um Kollision zu prüfen, müssen wir Player in World-Koord umrechnen
+            player_world_rect = player_rect.copy()
+            player_world_rect.x += int(self.scroll_x)
+
+            # Prüfe Kollision
+            hit_door = False
+            for door in self.current_level.doors:
+                if player_world_rect.colliderect(door.rect):
+                    hit_door = True
+                    break
+
+            if hit_door:
+                self.switch_to_toilet()
+
+        elif self.current_state == self.STATE_TOILETTE:
+            # In der Toilette: Keine Kameraverschiebung
+            hit_door = False
+            for door in self.current_level.doors:
+                if player_rect.colliderect(door.rect):
+                    hit_door = True
+                    break
+
+            if hit_door:
+                self.switch_to_flur()
+
+    def switch_to_toilet(self):
+        # a) Speichere Position
+        # Die "echte" Position im Flur ist scroll_x + player.rect.x
+        # Wir wollen, dass der Spieler später an der exakt gleichen Stelle weiterläuft.
+        # Am einfachsten: Wir speichern scroll_x. Die Player-Screen-Pos können wir resetten oder behalten.
+        self.saved_world_x = self.scroll_x + self.player.rect.x
+
+        # b) Wechsel Status
+        self.current_state = self.STATE_TOILETTE
+        self.current_level = self.level_toilette
+
+        # c) Spieler an Eingang setzen
+        self.player.rect.x = 100
+        self.player.pos.x = 100
+        self.player.vel.x = 0
+        self.player.acc.x = 0
+
+        # Reset scroll (Toilette hat kein Scrolling)
+        self.scroll_x = 0
+
+    def switch_to_flur(self):
+        # a) Wechsel Status
+        self.current_state = self.STATE_FLUR
+        self.current_level = self.level_flur
+
+        # b) Position wiederherstellen
+        # Wir wollen, dass (scroll_x + player.rect.x) == saved_world_x
+        # Wir setzen den Spieler in die Mitte des Screens (oder wo er war) und berechnen scroll_x entsprechend.
+
+        target_screen_x = self.screen_width // 2
+        self.player.rect.x = target_screen_x
+        self.player.pos.x = target_screen_x
+        self.player.vel.x = 0
+        self.player.acc.x = 0
+
+        self.scroll_x = self.saved_world_x - target_screen_x
+        if self.scroll_x < 0: self.scroll_x = 0 # Sollte im unendlichen Flur kein Problem sein, aber sicherheitshalber
+
+    def update_camera(self):
+        if self.current_state == self.STATE_FLUR:
+            # Side Scrolling Logic: Spieler in der Mitte halten
+            # Ziel: Player.rect.x soll ~ screen_width / 2 sein
+            # Wenn Player sich bewegt, passen wir scroll_x an, nicht player.rect.x (visuell)
+            # ABER: Die PhysicsPlayer Logik bewegt player.rect.x
+            # Wir müssen also "nachziehen".
+
+            # Schwellenwert für Scrolling (Deadzone)
+            limit_left = self.screen_width // 2 - 50
+            limit_right = self.screen_width // 2 + 50
+
+            # Einfaches Scrolling: Wenn Spieler zu weit rechts, scrollen wir
+            if self.player.rect.right > limit_right:
+                diff = self.player.rect.right - limit_right
+                self.scroll_x += diff
+                self.player.rect.right = limit_right
+                self.player.pos.x = self.player.rect.x # Sync Physics pos
+
+            if self.player.rect.left < limit_left:
+                diff = limit_left - self.player.rect.left
+                if self.scroll_x > 0: # Nur nach links scrollen wenn wir nicht am Anfang sind
+                    self.scroll_x -= diff
+                    self.player.rect.left = limit_left
+                    self.player.pos.x = self.player.rect.x
+
+            # Begrenzung Scroll
+            if self.scroll_x < 0:
+                self.scroll_x = 0
+
+    def run(self):
+        while self.running:
+            self.handle_input()
+            self.update_camera()
+
+            # Draw
+            # 1. Level Hintergrund & Türen
+            self.current_level.draw(self.screen, self.scroll_x)
+
+            # 2. Spieler (hat Offset im Flur nicht nötig, da wir scroll_x nutzen um die Welt zu verschieben,
+            # und den Spieler im Screen-Space fixieren (durch update_camera).
+            # Wait, PhysicsPlayer bewegt rect im Screen Space. update_camera korrigiert es.
+            # Also zeichnen wir Player einfach an rect.
+            self.screen.blit(self.player.image, self.player.rect)
+
+            pygame.display.flip()
+            self.clock.tick(FPS)
+
+        pygame.quit()
 
 if __name__ == "__main__":
-    main()
+    Game().run()
