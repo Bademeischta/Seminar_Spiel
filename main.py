@@ -326,6 +326,16 @@ class HallwayLevel(Level):
         super().__init__(screen_w, screen_h)
         self.bg = ResourceManager.load_image(["sprites", "World", "Fenster.jpeg"], fallback_color=WEISS)
 
+        # Hintergrund Skalierung (Anpassen an Bildschirmhöhe)
+        if self.bg:
+            bg_w = self.bg.get_width()
+            bg_h = self.bg.get_height()
+            if bg_h != self.screen_h and bg_h > 0:
+                scale_factor = self.screen_h / bg_h
+                new_w = int(bg_w * scale_factor)
+                new_h = self.screen_h
+                self.bg = pygame.transform.scale(self.bg, (new_w, new_h))
+
         # Generator Status
         self.next_spawn_x = 400
 
@@ -398,6 +408,16 @@ class ToiletLevel(Level):
     def __init__(self, screen_w, screen_h):
         super().__init__(screen_w, screen_h)
         self.bg = ResourceManager.load_image(["sprites", "World", "Toiletten.jpeg"], fallback_color=(100,100,100))
+
+        # Hintergrund Skalierung (Anpassen an Bildschirmhöhe)
+        if self.bg:
+            bg_w = self.bg.get_width()
+            bg_h = self.bg.get_height()
+            if bg_h != self.screen_h and bg_h > 0:
+                scale_factor = self.screen_h / bg_h
+                new_w = int(bg_w * scale_factor)
+                new_h = self.screen_h
+                self.bg = pygame.transform.scale(self.bg, (new_w, new_h))
 
         # Wände
         w = 20
