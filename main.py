@@ -22,6 +22,7 @@ FPS = 60
 GAME_STATE_MENU = 0
 GAME_STATE_PLAYING = 1
 GAME_STATE_GAME_OVER = 2
+GAME_STATE_TRANSITION = 3
 
 # Physics
 GRAVITY = 0.8
@@ -131,6 +132,7 @@ class Player(Entity):
         self.acc = pygame.math.Vector2(0, GRAVITY)
         keys = pygame.key.get_pressed()
 
+        # Input handling (disabled during transition via Game class logic, but good to be safe)
         if keys[pygame.K_a]:
             self.acc.x = -PLAYER_ACC
             self.facing_right = False
@@ -193,6 +195,145 @@ class Door(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.bottomleft = (x, y)
 
+class TransitionManager:
+    def __init__(self, game):
+        self.game = game
+        self.phase = 0  # 0: Inactive, 1: Vortex, 2: Shutter Close, 3: Shutter Open
+
+        # Animation Settings
+        self.vortex_duration = 75  # Frames (~1.25s)
+        self.shutter_duration = 45 # Frames (~0.75s)
+
+        # State
+        self.timer = 0
+        self.original_player_img = None
+        self.start_pos = None
+        self.target_pos = None
+        self.shutter_bars = [] # List of (rect, start_pos, target_pos, angle)
+
+    def start_transition(self, target_door_rect):
+        """Starts the transition sequence."""
+        self.game.state = GAME_STATE_TRANSITION
+        self.phase = 1
+        self.timer = 0
+
+        # Vortex Setup
+        # Capture original image for high-quality rotation
+        self.original_player_img = self.game.player.image.copy()
+
+        # Start and Target positions relative to screen (since camera is frozen)
+        # Player pos is currently world pos. Need to convert to screen pos.
+        p_screen_x = self.game.player.rect.centerx - self.game.camera_x
+        p_screen_y = self.game.player.rect.centery
+        self.start_pos = pygame.math.Vector2(p_screen_x, p_screen_y)
+
+        d_screen_x = target_door_rect.centerx - self.game.camera_x
+        d_screen_y = target_door_rect.centery
+        self.target_pos = pygame.math.Vector2(d_screen_x, d_screen_y)
+
+        # Shutter Setup
+        self.shutter_bars = []
+        bar_w, bar_h = 700, 400
+        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+
+        # Define 4 bars outside screen moving to center
+        # (Start Pos, End Pos, Angle)
+        configs = [
+            ((cx, -bar_h), (cx, cy - 100), 45),    # Top
+            ((cx, SCREEN_HEIGHT + bar_h), (cx, cy + 100), 45), # Bottom
+            ((-bar_w, cy), (cx - 150, cy), 135),   # Left
+            ((SCREEN_WIDTH + bar_w, cy), (cx + 150, cy), 135) # Right
+        ]
+
+        # Actually let's make them simpler but larger to ensure coverage
+        # 4 Rects coming from 4 sides to center.
+        # We use surfaces to support rotation
+        for i in range(4):
+            surf = pygame.Surface((800, 600))
+            surf.fill(BLACK)
+
+            # Target center
+            target = pygame.math.Vector2(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)
+
+            # Start positions (Top, Right, Bottom, Left)
+            if i == 0: start = pygame.math.Vector2(SCREEN_WIDTH//2, -400)
+            elif i == 1: start = pygame.math.Vector2(SCREEN_WIDTH + 400, SCREEN_HEIGHT//2)
+            elif i == 2: start = pygame.math.Vector2(SCREEN_WIDTH//2, SCREEN_HEIGHT + 400)
+            else: start = pygame.math.Vector2(-400, SCREEN_HEIGHT//2)
+
+            angle = 45 + (i * 90) # Rotate them a bit
+            self.shutter_bars.append({'surf': surf, 'start': start, 'target': target, 'angle': angle})
+
+    def update(self):
+        self.timer += 1
+
+        if self.phase == 1: # Vortex
+            if self.timer >= self.vortex_duration:
+                self.phase = 2
+                self.timer = 0
+
+        elif self.phase == 2: # Shutter Close
+            if self.timer >= self.shutter_duration:
+                # Screen is black, switch level
+                self.game.switch_level()
+                self.phase = 3
+                self.timer = 0
+
+        elif self.phase == 3: # Shutter Open
+            if self.timer >= self.shutter_duration:
+                self.game.state = GAME_STATE_PLAYING
+                self.phase = 0
+
+    def draw(self, screen):
+        # Phase 1: Vortex (Draw spinning player)
+        if self.phase == 1:
+            t = self.timer / self.vortex_duration
+            # Ease in/out
+            t = t * t * (3 - 2 * t)
+
+            # Lerp Position
+            curr_pos = self.start_pos.lerp(self.target_pos, t)
+
+            # Rotation & Scale
+            angle = t * 360 * 4 # Spin 4 times
+            scale = 1.0 - t
+            if scale < 0: scale = 0
+
+            # Rotozoom
+            # rotozoom(surface, angle, scale)
+            rotated_img = pygame.transform.rotozoom(self.original_player_img, angle, scale)
+            new_rect = rotated_img.get_rect(center=(int(curr_pos.x), int(curr_pos.y)))
+            screen.blit(rotated_img, new_rect)
+
+        # Phase 2 & 3: Shutter
+        if self.phase in [2, 3]:
+            screen_center = pygame.math.Vector2(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)
+
+            if self.phase == 2: # Closing
+                t = self.timer / self.shutter_duration
+            else: # Opening (reverse)
+                t = 1.0 - (self.timer / self.shutter_duration)
+
+            # Ease
+            t = t * t * (3 - 2 * t)
+
+            # Fill background black if fully closed to avoid gaps
+            if self.phase == 2 and t > 0.95:
+                screen.fill(BLACK)
+            elif self.phase == 3 and t > 0.95:
+                screen.fill(BLACK)
+
+            for bar in self.shutter_bars:
+                # Lerp position
+                curr_pos = bar['start'].lerp(bar['target'], t)
+
+                # Rotate bar
+                rot_angle = bar['angle'] * t
+                rotated_surf = pygame.transform.rotate(bar['surf'], rot_angle)
+                rect = rotated_surf.get_rect(center=(int(curr_pos.x), int(curr_pos.y)))
+
+                screen.blit(rotated_surf, rect)
+
 class Game:
     def __init__(self):
         pygame.init()
@@ -205,11 +346,19 @@ class Game:
         self.font_title = pygame.font.SysFont("Arial", 60, bold=True)
         self.font_big = pygame.font.SysFont("Arial", 40, bold=True)
 
+        # Backgrounds
         self.bg_hallway = load_image(["sprites", "World", "Fenster.jpeg"], (SCREEN_WIDTH, SCREEN_HEIGHT), GRAY)
+        self.bg_toilet = load_image(["sprites", "World", "Toiletten.jpeg"], (SCREEN_WIDTH, SCREEN_HEIGHT), GRAY)
 
         self.state = GAME_STATE_MENU
         self.score = 0
         self.blink_timer = 0
+
+        # Level Management
+        self.in_toilet = False
+        self.saved_hallway_data = {} # To store x pos etc.
+
+        self.transition_manager = TransitionManager(self)
 
         # Initialize containers (will be filled in reset_game)
         self.all_sprites = None
@@ -217,14 +366,15 @@ class Game:
         self.teachers = None
         self.player = None
 
-        # Just to have empty groups before first start if needed
         self.reset_game()
-        # Ensure we start at MENU
         self.state = GAME_STATE_MENU
 
     def reset_game(self):
         """Resets the game session completely."""
         self.score = 0
+        self.in_toilet = False
+        self.saved_hallway_data = {}
+
         self.all_sprites = pygame.sprite.Group()
         self.doors = pygame.sprite.Group()
         self.teachers = pygame.sprite.Group()
@@ -236,7 +386,76 @@ class Game:
         self.next_spawn_x = 400
         self.state = GAME_STATE_PLAYING
 
+    def switch_level(self):
+        """Toggles between Hallway and Toilet."""
+        if not self.in_toilet:
+            # Go to Toilet
+            self.in_toilet = True
+
+            # Save Hallway State
+            self.saved_hallway_data = {
+                'camera_x': self.camera_x,
+                'player_x': self.player.pos.x,
+                'score_distance': self.player.score_distance,
+                # Note: We technically lose enemies here if we just clear groups.
+                # For simplicity, we'll clear and assume they despawned or player "escaped".
+                # If we wanted to keep them, we'd need multiple sprite groups or object persistence.
+                # Given requirements: "Level-Wechsel (Flur <-> Toilette)", usually implies a scene switch.
+            }
+
+            # Clear Objects
+            self.doors.empty()
+            self.teachers.empty()
+            self.all_sprites.empty()
+
+            # Setup Toilet
+            # Safe room, bounded. Center camera conceptually or fixed 0.
+            self.camera_x = 0
+
+            # Spawn Player at entrance (left side usually)
+            self.player.pos.x = 100
+            self.player.pos.y = SCREEN_HEIGHT
+            self.player.vel = pygame.math.Vector2(0, 0)
+            self.player.rect.bottomleft = self.player.pos
+            self.all_sprites.add(self.player)
+
+            # Spawn Exit Door
+            exit_door = Door(800, SCREEN_HEIGHT)
+            self.doors.add(exit_door)
+            self.all_sprites.add(exit_door)
+
+        else:
+            # Return to Hallway
+            self.in_toilet = False
+
+            # Restore Data
+            saved = self.saved_hallway_data
+            self.camera_x = saved.get('camera_x', 0)
+            self.player.score_distance = saved.get('score_distance', 0)
+
+            # Clear Toilet Objects
+            self.doors.empty()
+            self.teachers.empty()
+            self.all_sprites.empty()
+
+            # Restore Player
+            self.player.pos.x = saved.get('player_x', 100)
+            self.player.pos.y = SCREEN_HEIGHT
+            self.player.vel = pygame.math.Vector2(0, 0)
+            self.player.rect.bottomleft = self.player.pos
+            self.all_sprites.add(self.player)
+
+            # We need to ensure we don't spawn right on top of nothing.
+            # Maybe spawn a door behind us to show where we came from?
+            # Or just resume. Let's resume.
+            # Ensure `next_spawn_x` is ahead of us.
+            self.next_spawn_x = max(self.next_spawn_x, self.camera_x + SCREEN_WIDTH + 100)
+
     def generate_level(self):
+        # Only generate in Hallway
+        if self.in_toilet:
+            return
+
         spawn_trigger_x = self.camera_x + SCREEN_WIDTH + 100
         if self.next_spawn_x < spawn_trigger_x:
             obj_type = random.choice(["door", "teacher", "empty", "empty"])
@@ -255,6 +474,9 @@ class Game:
             self.next_spawn_x += random.randint(300, 600)
 
     def cleanup_level(self):
+        if self.in_toilet:
+            return
+
         despawn_threshold = self.camera_x - 200
         for sprite in self.all_sprites:
             if sprite == self.player:
@@ -283,9 +505,13 @@ class Game:
                     if event.key == pygame.K_SPACE:
                         self.player.jump()
                     if event.key == pygame.K_w:
+                        # Check Door Interaction
                         hits = pygame.sprite.spritecollide(self.player, self.doors, False)
                         if hits:
-                            print("Interacted with door! (Feature placeholder)")
+                            # Trigger Transition!
+                            # Find the closest door center (should be 'hits[0]')
+                            target_door = hits[0]
+                            self.transition_manager.start_transition(target_door.rect)
 
                 # State: GAME OVER
                 elif self.state == GAME_STATE_GAME_OVER:
@@ -296,45 +522,49 @@ class Game:
         # Updates
         self.player.update()
 
-        # Camera
-        target_cam_x = self.player.pos.x - (SCREEN_WIDTH // 3)
-        if target_cam_x < 0: target_cam_x = 0
-        self.camera_x = target_cam_x
+        # Toilet Constraints
+        if self.in_toilet:
+            # Walls
+            if self.player.pos.x < 50: self.player.pos.x = 50
+            if self.player.pos.x > SCREEN_WIDTH - 50: self.player.pos.x = SCREEN_WIDTH - 50
 
-        # Teachers
-        for t in self.teachers:
-            t.update()
+            # Keep camera static
+            # self.camera_x remains 0 (set in switch_level)
 
-        # Level
-        self.generate_level()
-        self.cleanup_level()
+        else:
+            # Hallway Camera
+            target_cam_x = self.player.pos.x - (SCREEN_WIDTH // 3)
+            if target_cam_x < 0: target_cam_x = 0
+            self.camera_x = target_cam_x
 
-        # Collisions: Player vs Teacher (Mario Style)
-        hits = pygame.sprite.spritecollide(self.player, self.teachers, False)
-        for teacher in hits:
-            # Check for Stomp: Falling AND Player Bottom slightly above/overlapping Teacher Top
-            # Using a threshold: if player's bottom is within the top 40% of the enemy
-            if self.player.vel.y > 0 and self.player.rect.bottom < teacher.rect.top + 50:
-                teacher.kill()
-                self.player.bounce()
-                self.score += 100
-            else:
-                # Lateral collision -> Game Over
-                self.state = GAME_STATE_GAME_OVER
+            # Teachers (Only update/spawn in Hallway)
+            for t in self.teachers:
+                t.update()
 
-        # Fall off map check (just in case)
+            # Level Generation
+            self.generate_level()
+            self.cleanup_level()
+
+            # Collisions: Player vs Teacher
+            hits = pygame.sprite.spritecollide(self.player, self.teachers, False)
+            for teacher in hits:
+                if self.player.vel.y > 0 and self.player.rect.bottom < teacher.rect.top + 50:
+                    teacher.kill()
+                    self.player.bounce()
+                    self.score += 100
+                else:
+                    self.state = GAME_STATE_GAME_OVER
+
+        # Fall off map check
         if self.player.pos.y > SCREEN_HEIGHT + 100:
             self.state = GAME_STATE_GAME_OVER
 
     def draw_menu(self):
         self.screen.fill(BLACK)
-
-        # Title
         title_surf = self.font_title.render("Schul-Abenteuer", True, WHITE)
         title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
         self.screen.blit(title_surf, title_rect)
 
-        # Blinking Text
         self.blink_timer += 1
         if (self.blink_timer // 30) % 2 == 0:
             instr_surf = self.font_big.render("Drücke ENTER zum Starten", True, WHITE)
@@ -342,8 +572,6 @@ class Game:
             self.screen.blit(instr_surf, instr_rect)
 
     def draw_game_over(self):
-        # We can draw over the last frame of the game for effect, or black screen.
-        # Let's do a semi-transparent overlay or just black for simplicity/clarity.
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         overlay.fill(BLACK)
         overlay.set_alpha(200)
@@ -362,30 +590,39 @@ class Game:
         restart_rect = restart_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
         self.screen.blit(restart_surf, restart_rect)
 
-    def draw_playing(self):
-        # Draw Background
-        rel_x = self.camera_x % self.bg_hallway.get_width()
-        self.screen.blit(self.bg_hallway, (-rel_x, 0))
-        if rel_x < SCREEN_WIDTH:
-            self.screen.blit(self.bg_hallway, (-rel_x + self.bg_hallway.get_width(), 0))
+    def draw_world(self):
+        # Logic separated for reuse in transition (background stays visible)
+        if self.in_toilet:
+            self.screen.blit(self.bg_toilet, (0, 0))
+        else:
+            rel_x = self.camera_x % self.bg_hallway.get_width()
+            self.screen.blit(self.bg_hallway, (-rel_x, 0))
+            if rel_x < SCREEN_WIDTH:
+                self.screen.blit(self.bg_hallway, (-rel_x + self.bg_hallway.get_width(), 0))
 
         # Draw Sprites
         for sprite in self.all_sprites:
+            # During Vortex phase (1) and Shutter Close (2), hide the real player.
+            # In Shutter Open (3), we want to see the player at the new position.
+            if self.state == GAME_STATE_TRANSITION and self.transition_manager.phase in [1, 2] and sprite == self.player:
+                continue
+
             screen_pos = (sprite.rect.x - self.camera_x, sprite.rect.y)
             self.screen.blit(sprite.image, screen_pos)
 
+    def draw_hud(self):
+        if self.in_toilet:
+            draw_text_with_shadow(self.screen, self.font_ui, "Ort: Toiletten (Safe Room)", GREEN, 20, 20)
+        else:
+            hud_text = f"Distanz: {int(self.player.score_distance)} m | Score: {self.score}"
+            draw_text_with_shadow(self.screen, self.font_ui, hud_text, WHITE, 20, 20)
+
         # Draw Door Hint
-        # Check overlap without spritecollide (since we need camera offset) OR use spritecollide
         door_hits = pygame.sprite.spritecollide(self.player, self.doors, False)
         if door_hits:
-            # Draw above player
             hint_x = self.player.rect.centerx - self.camera_x - 40
             hint_y = self.player.rect.top - 30
             draw_text_with_shadow(self.screen, self.font_ui, "Drücke [W]", WHITE, hint_x, hint_y)
-
-        # HUD
-        hud_text = f"Distanz: {int(self.player.score_distance)} m | Score: {self.score}"
-        draw_text_with_shadow(self.screen, self.font_ui, hud_text, WHITE, 20, 20)
 
     def run(self):
         running = True
@@ -396,7 +633,18 @@ class Game:
                 self.draw_menu()
             elif self.state == GAME_STATE_PLAYING:
                 self.update_playing()
-                self.draw_playing()
+                self.draw_world()
+                self.draw_hud()
+            elif self.state == GAME_STATE_TRANSITION:
+                # Update Transition
+                self.transition_manager.update()
+
+                # Draw World (Frozen)
+                self.draw_world()
+
+                # Draw Transition Effects
+                self.transition_manager.draw(self.screen)
+
             elif self.state == GAME_STATE_GAME_OVER:
                 self.draw_game_over()
 
