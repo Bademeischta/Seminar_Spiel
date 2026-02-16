@@ -17,50 +17,61 @@ Es wurde bewusst auf Grafiken verzichtet, um die **Spielmechanik (Game Feel)** z
 
 ---
 
-## 3. Detaillierte Änderungen & Implementierungen
+## 3. Transformation zum "Meisterwerk" (Aktueller Stand)
 
-### A. Erweitertes Spieler-Movement
-Das Movement wurde deutlich komplexer gestaltet, um dem "Cuphead-Feeling" gerecht zu werden:
-* **Variabler Sprung:** Die Sprunghöhe hängt nun davon ab, wie lange die Leertaste gedrückt wird.
-* **Pausenhof-Dash (Shift):**
-    * Schneller Vorstoß (ca. 150px).
-    * **I-Frames:** Während des Dashes ist der Spieler unverwundbar.
-    * Limitierung: Nur ein Dash pro Luftsprung möglich.
-* **Streber-Parry:**
-    * Pinke Projektile können parriert werden, wenn man in der Luft im richtigen Moment (15 Frames Fenster) erneut die Leertaste drückt.
-    * Belohnung: Der Spieler macht einen Doppelsprung und füllt seine **Spickzettel-Leiste (Cards)**.
-* **EX-Angriff (Q / Rechtsklick):** Verbraucht eine "Karte" für einen massiven Papierflieger-Angriff mit 5x Schaden.
+Das Projekt wurde von einem einseitigen Prototyp in eine modulare, feature-reiche Game-Engine umgewandelt. Hier ist die Dokumentation der umfassenden Änderungen:
 
-### B. Die Arena (Das Spielfeld)
-* **Plattformen:** Es wurde ein pyramidales System mit 3 Plattformen eingeführt.
-* **One-Way-Collision:** Der Spieler kann von unten durch Plattformen hindurchspringen.
-* **Drop-Down:** Durch Halten von `S` oder `Pfeil Runter` + `Leertaste` fällt der Spieler durch die Plattform nach unten.
+### A. Modulare Code-Architektur
+Um Wartbarkeit und Skalierbarkeit zu gewährleisten, wurde der Code in spezialisierte Module aufgeteilt:
+* `main.py`: Zentraler Game-Loop und State-Machine (Menü, Spiel, Win-Screen, Statistiken).
+* `player.py`: Erweiterte Spieler-Physik und Kampf-Mechaniken.
+* `boss.py`: KI-Logik für Dr. Pythagoras 2.0 mit Phasen-System.
+* `projectiles.py` & `boss_projectiles.py`: Definitionen aller Geschosstypen.
+* `effects.py`: `ParticleManager` und `EffectManager` für visuelles Feedback.
+* `ui.py`: HUD, Menü-Systeme und Grading-Bildschirme.
+* `save_system.py`: Persistente Speicherung von Fortschritten (JSON).
+* `constants.py`: Zentrale Konfiguration aller Spielparameter.
+* `utils.py`: Sprite-Loader und Sound-Manager Platzhalter.
 
-### C. Boss-Kampf: Dr. Pythagoras (100 HP)
-Der Boss nutzt eine **State-Machine**, um zwischen 3 Phasen zu wechseln:
+### B. Erweitertes Spieler-Arsenal
+* **Movement-System:**
+    * **Triple-Jump:** Bis zu drei Sprünge möglich (nach Perfect Parry).
+    * **Wall-Jump & Cling:** Spieler kann an Wänden haften und abspringen, was einen Momentum-Boost verleiht.
+    * **8-Richtungs-Dash:** Volle Kontrolle über die Dash-Richtung (inkl. Slam-Down).
+    * **Focus-Mode:** Verlangsamt die Zeit für präzise Manöver (verbraucht Energie).
+* **Kampf-System:**
+    * **Charge-Shot:** Halten der Schießen-Taste für massiven Schaden.
+    * **EX-Varianten:** Umschaltbare Spezialangriffe (Papierflieger, Radiergummi-Bombe, Lineal-Boomerang).
+    * **Ultimate (Super):** Verbraucht 5 Karten für einen Full-Screen Laser.
+    * **Notizbuch-Schild:** Blockiert kurzzeitig einen Treffer.
+* **Parry 2.0:** Unterscheidung zwischen Standard-Parry und Perfect-Parry (5-Frame Fenster) mit massiven Boni und Zeitlupe.
 
-1. **Phase 1 (Hellrot, 100-70 HP):** Stationär.
-    * *Angriff 1 (Geometrie-Schuss):* 3 Projektile, das letzte ist pink (Parry!).
-    * *Angriff 2 (Radiergummi):* Ein abprallender Block, der immer schneller wird.
-2. **Phase 2 (Orange, 69-30 HP):** Schwebt auf und ab.
-    * *Angriff 3 (Tafel-Wischer):* Eine riesige Wand rast von rechts nach links. Man muss durch sie hindurch-dashen.
-    * *Angriff 4 (Gleichungs-Regen):* Sinusförmig fallende Objekte von der Decke.
-3. **Phase 3 (Dunkelrot, 29-0 HP):** Teleportiert sich wild umher.
-    * *Angriff 5 (Zirkel-Hölle):* 8-Richtungs-Schuss (Stern-Muster) in 3 Salven.
-    * *Angriff 6 (Zeigestock des Todes):* Ein Laser-Visier peilt den Spieler an, gefolgt von einem dicken Laserstrahl.
+### C. Dr. Pythagoras 2.0 (Boss Evolution)
+Der Kampf ist nun in drei dramatische Phasen unterteilt:
+* **Phase 1 (Lektion):** Klassische Pattern, Einführung in Parry-Mechaniken.
+* **Phase 2 (Realitätscheck):** Boss schwebt, Arena verändert sich (Plattformen verschwinden), neue Angriffe wie "Protractor Spin" und "Textbook Slam".
+* **Phase 3 (Verzweiflung):** Reality-Breaks (invertierte Steuerung/Gravitation), konstantes Teleportieren, "Blackboard Barrage" Ultimate-Attacke.
+* **Weak-Point System:** Boss zeigt temporäre Schwachstellen (leuchtende Bereiche), die bei Treffern multiplen Schaden verursachen.
 
-### D. Benutzeroberfläche (UI)
-* **Spieler-HP:** 3 rote Quadrate oben links.
-* **Special-Meter:** 5 blaue Karten-Slots, die sich durch Parries füllen.
-* **Boss-HP:** Ein klassischer Boss-Balken oben rechts mit Namensanzeige.
+### D. Game Feel & "Juice"
+Die unsichtbare Magie wurde durch Code-basierte Effekte implementiert:
+* **Screen-Shake:** Dynamische Erschütterungen bei Treffern und Explosionen.
+* **Slow-Motion:** Dramatische Zeitlupen bei Perfect Parries und Boss-Phasenwechseln.
+* **Particle System:** Staub beim Springen, Funken bei Treffern, Trails beim Dashen und goldene Blitze bei Parries.
+* **Damage Numbers:** Fließende Schadenszahlen zeigen Treffer-Effektivität an (kritisch/schwach).
+* **Dialogue:** Boss interagiert während des Kampfes mit dem Spieler.
+
+### E. Meta-Progression
+* **Grading System:** Bewertung von D bis S+ basierend auf Zeit, Schaden, Parries und Style.
+* **Lifetime Stats:** Speicherung von Gesamtsiegen, Bestzeiten und Parry-Rekorden.
+* **Menü-System:** Voll funktionsfähiges Startmenü und Statistik-Ansicht.
 
 ---
 
-## 4. Technische Umsetzung
-Die gesamte Logik wurde strikt **objektorientiert (OOP)** umgesetzt:
-* `class Player`: Verwaltet Physik, Input, Dash-Timer und Parry-Fenster.
-* `class Boss`: Verwaltet die Phasen, Movement-Muster und die Angriffs-KI.
-* `class BossProjectile`: Eine Basis-Klasse für alle feindlichen Geschosse (auch parry-bare).
-* `class Platform`: Ermöglicht die spezielle One-Way-Physik.
+## 4. Implementierungs-Details (Warum so gemacht?)
+* **Delta-Time (dt) Skalierung:** Alle Bewegungen sind an `dt` gebunden, was konsistente Physik bei unterschiedlichen Frameraten oder Zeitlupen-Effekten ermöglicht.
+* **Sprite-Integration:** Der `SpriteLoader` erlaubt den nahtlosen Übergang von Greybox-Flächen zu echten Assets, sobald diese verfügbar sind.
+* **Sound-Manager:** Platzhalter-Struktur ermöglicht das einfache Einfügen von Audio-Assets, indem nur das `SoundManager`-Modul aktualisiert werden muss, ohne die Spiellogik anzutasten.
+* **JSON-Save:** Einfach lesbares Format für Spieler-Fortschritte, das leicht erweiterbar ist (z.B. für Unlocks).
 
-**Ergebnis:** Ein hochgradig modularer Prototyp, der bereit für finale Assets und die Verschmelzung mit dem Hauptspiel ist.
+**Fazit:** Aus einem einfachen Prototyp wurde ein modulares Grundgerüst für ein professionelles Indie-Spiel entwickelt, das alle Anforderungen des "Ultimate Design Master-Dokuments" erfüllt.
