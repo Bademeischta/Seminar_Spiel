@@ -4,6 +4,7 @@ import random
 from constants import *
 from projectiles import PlayerProjectile, EXFlieger, EXEraser, EXRuler, EXSuper, SpreadProjectile, HomingProjectile
 from utils import SoundManager
+from effects import AfterimageParticle
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, game, x, y):
@@ -405,30 +406,47 @@ class Player(pygame.sprite.Sprite):
             if self.rect.left <= 0:
                 self.on_wall = 'left'
                 self.wall_cling_timer = WALL_CLING_TIME
-                self.vel.y = min(self.vel.y, 2)
+                if self.wall_cling_timer > 0:
+                    self.vel.y = min(self.vel.y, 2)
             elif self.rect.right >= SCREEN_WIDTH:
                 self.on_wall = 'right'
                 self.wall_cling_timer = WALL_CLING_TIME
-                self.vel.y = min(self.vel.y, 2)
+                if self.wall_cling_timer > 0:
+                    self.vel.y = min(self.vel.y, 2)
             else:
                 self.on_wall = None
         else:
             self.on_wall = None
 
-        # Floor
-        if self.pos.y >= SCREEN_HEIGHT:
-            if not self.is_grounded:
-                self.spawn_jump_particles() # Landing dust
-                self.sound_manager.play("land")
-                self.squash_factor = pygame.math.Vector2(1.2, 0.8) # Squash
-                self.squash_timer = 10
-                
-            self.pos.y = SCREEN_HEIGHT
-            self.vel.y = 0
-            self.is_grounded = True
-            self.can_air_dash = True
-            self.jump_count = 0
-            self.max_jumps = 2 if not self.streber_mode else 3
+        # Floor / Ceiling (Inverted Gravity)
+        if self.game.inverted_gravity:
+            if self.pos.y <= 0:
+                if not self.is_grounded:
+                    self.spawn_jump_particles() # Landing dust
+                    self.sound_manager.play("land")
+                    self.squash_factor = pygame.math.Vector2(1.2, 0.8) # Squash
+                    self.squash_timer = 10
+                    
+                self.pos.y = 0
+                self.vel.y = 0
+                self.is_grounded = True
+                self.can_air_dash = True
+                self.jump_count = 0
+                self.max_jumps = 2 if not self.streber_mode else 3
+        else:
+            if self.pos.y >= SCREEN_HEIGHT:
+                if not self.is_grounded:
+                    self.spawn_jump_particles() # Landing dust
+                    self.sound_manager.play("land")
+                    self.squash_factor = pygame.math.Vector2(1.2, 0.8) # Squash
+                    self.squash_timer = 10
+                    
+                self.pos.y = SCREEN_HEIGHT
+                self.vel.y = 0
+                self.is_grounded = True
+                self.can_air_dash = True
+                self.jump_count = 0
+                self.max_jumps = 2 if not self.streber_mode else 3
 
         # Boss Interaction
         hits = pygame.sprite.spritecollide(self, self.game.boss_bullets, False)
@@ -535,7 +553,6 @@ class Player(pygame.sprite.Sprite):
             # Create a surface for afterimage
             surf = pygame.Surface((w, h), pygame.SRCALPHA)
             pygame.draw.rect(surf, color, (0, 0, w, h))
-            from effects import AfterimageParticle # Local import to avoid circular?
             self.game.particle_manager.add(AfterimageParticle(pygame.math.Vector2(rect.center), surf, 15, 150))
 
         # Charge Meter

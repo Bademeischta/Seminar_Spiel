@@ -19,6 +19,7 @@ class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.render_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)) # For Zoom
         pygame.display.set_caption("Dr. Pythagoras 2.0 - Ultimate Boss Fight")
         self.clock = pygame.time.Clock()
         self.save_system = SaveSystem()
@@ -156,11 +157,6 @@ class Game:
             self.particle_manager.update(dt)
             self.effect_manager.update()
             
-            # Sync stats from player (simplified)
-            self.total_parries = self.player.parry_chain # Not quite right, need accumulation
-            # Actually parry chain resets, so we should hook into the parry event.
-            # Ideally Player calls Game.add_parry()
-            
             # Reality break cleanup
             if self.reality_break_timer > 0:
                 self.reality_break_timer -= dt
@@ -191,27 +187,29 @@ class Game:
         self.state = "MENU" 
 
     def draw(self):
-        self.screen.fill(BLACK)
-
+        # Draw everything to render_surface
+        self.render_surface.fill(BLACK)
+        
         camera_offset = self.effect_manager.get_camera_offset()
 
         if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN"]:
             for plat in self.platforms:
-                pygame.draw.rect(self.screen, GRAY, plat.rect.move(-camera_offset.x, -camera_offset.y))
+                pygame.draw.rect(self.render_surface, GRAY, plat.rect.move(-camera_offset.x, -camera_offset.y))
 
-            self.player.draw(self.screen, camera_offset)
-            self.boss.draw(self.screen, camera_offset)
+            self.player.draw(self.render_surface, camera_offset)
+            self.boss.draw(self.render_surface, camera_offset)
 
-            for bullet in self.player_bullets: bullet.draw(self.screen, camera_offset)
-            for bullet in self.boss_bullets: bullet.draw(self.screen, camera_offset)
+            for bullet in self.player_bullets: bullet.draw(self.render_surface, camera_offset)
+            for bullet in self.boss_bullets: bullet.draw(self.render_surface, camera_offset)
 
-            self.particle_manager.draw(self.screen, camera_offset)
-            self.effect_manager.draw(self.screen, camera_offset)
+            self.particle_manager.draw(self.render_surface, camera_offset)
+            self.effect_manager.draw(self.render_surface, camera_offset)
 
-            self.hud.draw(self.screen)
-
+            # Draw HUD directly to screen later? No, usually UI is not zoomed.
+            # But let's keep it consistent for now. Or better: Draw UI on screen, game on surface.
+            
             if self.state == "PAUSED":
-                draw_text(self.screen, "PAUSED", 64, SCREEN_WIDTH//2, SCREEN_HEIGHT//2, WHITE)
+                draw_text(self.render_surface, "PAUSED", 64, SCREEN_WIDTH//2, SCREEN_HEIGHT//2, WHITE)
 
             if self.reality_break_timer > 0:
                 # Flash based on type
@@ -220,8 +218,25 @@ class Game:
                 if self.reality_break_type == 'invert_gravity': color = (0, 0, 255, 50)
                 if self.reality_break_type == 'slow_mo': color = (255, 255, 0, 50)
                 overlay.fill(color)
-                self.screen.blit(overlay, (0, 0))
-                draw_text(self.screen, f"REALITY BREAK: {self.reality_break_type.upper()}", 32, SCREEN_WIDTH//2, 150, WHITE)
+                self.render_surface.blit(overlay, (0, 0))
+                draw_text(self.render_surface, f"REALITY BREAK: {self.reality_break_type.upper()}", 32, SCREEN_WIDTH//2, 150, WHITE)
+
+        # Apply Zoom
+        zoom = self.effect_manager.zoom_level
+        if zoom != 1.0:
+            w, h = int(SCREEN_WIDTH * zoom), int(SCREEN_HEIGHT * zoom)
+            scaled = pygame.transform.scale(self.render_surface, (w, h))
+            # Center it
+            x = (SCREEN_WIDTH - w) // 2
+            y = (SCREEN_HEIGHT - h) // 2
+            self.screen.fill(BLACK) # Clear borders
+            self.screen.blit(scaled, (x, y))
+        else:
+            self.screen.blit(self.render_surface, (0, 0))
+
+        # UI is drawn ON TOP of zoomed game (no zoom for UI)
+        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN"]:
+            self.hud.draw(self.screen)
 
         if self.state == "MENU":
             self.menu.draw(self.screen)

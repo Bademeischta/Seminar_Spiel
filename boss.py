@@ -44,11 +44,26 @@ class Boss(pygame.sprite.Sprite):
         self.float_offset = 0
         self.dialogue = ""
         self.dialogue_timer = 0
+        
+        self.reality_break_warning_timer = 0
+        self.reality_break_pending_type = None
 
     def update(self, dt=1.0):
         if self.in_transition:
             self.update_transition(dt)
             return
+
+        if self.reality_break_warning_timer > 0:
+            self.reality_break_warning_timer -= dt
+            if self.reality_break_warning_timer <= 0:
+                self.game.apply_reality_break(self.reality_break_pending_type)
+                self.reality_break_pending_type = None
+            return # Pause boss logic during warning? Or just continue? Maybe continue moving but no new attacks.
+            # Design says "Screen flashes", implies interrupt.
+            # Let's return to prevent new attack logic, but keep movement if needed. 
+            # For simplicity, freeze boss logic briefly or just return.
+            # Actually, let's allow movement but block new attacks.
+            pass
 
         if self.stun_timer > 0:
             self.stun_timer -= dt
@@ -270,7 +285,12 @@ class Boss(pygame.sprite.Sprite):
 
     def reality_break(self):
         effect = random.choice(['invert_controls', 'invert_gravity', 'slow_mo'])
-        self.game.apply_reality_break(effect)
+        self.reality_break_pending_type = effect
+        self.reality_break_warning_timer = 60 # 1 second warning
+        self.game.effect_manager.apply_shake(60, 2, type='rumble')
+        # Dialogue?
+        self.dialogue = f"REALITY BREAK: {effect.upper()}!"
+        self.dialogue_timer = 60
 
     def blackboard_barrage(self):
         self.sound_manager.play("ultimate_attack")
