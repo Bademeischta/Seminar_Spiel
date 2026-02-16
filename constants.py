@@ -1,0 +1,58 @@
+import pygame
+
+# --- Screen Settings ---
+SCREEN_WIDTH = 1000
+SCREEN_HEIGHT = 600
+FPS = 60
+
+# --- Colors ---
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+LIGHT_RED = (255, 100, 100)
+DARK_RED = (150, 0, 0)
+ORANGE = (255, 165, 0)
+BLUE = (0, 0, 255)
+LIGHT_BLUE = (100, 100, 255)
+GREEN = (0, 255, 0)
+GRAY = (150, 150, 150)
+DARK_GRAY = (50, 50, 50)
+PINK = (255, 105, 180)
+BROWN = (139, 69, 19)
+YELLOW = (255, 255, 0)
+GOLD = (255, 215, 0)
+CYAN = (0, 255, 255)
+PURPLE = (128, 0, 128)
+
+# --- Physics ---
+GRAVITY = 0.6
+PLAYER_ACC = 0.8
+PLAYER_FRICTION = -0.12
+PLAYER_MAX_SPEED = 6.0
+PLAYER_JUMP_FORCE = -12
+PLAYER_DASH_SPEED = 15
+PLAYER_DASH_DURATION = 10
+PLAYER_DASH_COOLDOWN = 60
+WALL_CLING_TIME = 120 # 2 seconds at 60fps
+
+# --- Combat ---
+MAX_PLAYER_HP = 3
+MAX_CARDS = 5
+PARRY_WINDOW = 15 # Standard parry
+PERFECT_PARRY_WINDOW = 5 # Perfect parry
+EX_FLIEGER_COST = 1
+EX_ERASER_COST = 2
+EX_RULER_COST = 2
+EX_SUPER_COST = 5
+CHARGE_TIME = 60 # 1 second for charge shot
+SHIELD_COOLDOWN = 300 # 5 seconds
+FOCUS_MAX_TIME = 180 # 3 seconds
+FOCUS_REGEN_RATE = 0.2 # 1s focus = 5s regen
+
+# --- Boss ---
+BOSS_MAX_HP = 100
+PHASE_2_THRESHOLD = 70
+PHASE_3_THRESHOLD = 30
+
+# --- File Paths ---
+SAVE_FILE = "save_data.json"
