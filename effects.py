@@ -191,18 +191,27 @@ class EffectManager:
         self.target_zoom = zoom
         # Duration not really used in simple lerp but could be for smoother transition control
 
-    def add_damage_number(self, pos, amount, is_weak=False, is_crit=False):
-        color = WHITE
-        size = 24
+    def add_damage_number(self, pos, amount, is_weak=False, is_crit=False, color=None, size=None):
+        if color is None:
+            color = WHITE
+            if is_weak: color = YELLOW
+            if is_crit: color = RED
+            
+        if size is None:
+            size = 24
+            if is_weak: size = 32
+            if is_crit: size = 40
+
         text = str(amount)
-        if is_weak:
-            color = YELLOW
-            size = 32
-            text += " WEAK!"
-        if is_crit:
-            color = RED
-            size = 40
-            text += " CRIT!"
+        if is_weak and "WEAK" not in text and not color: # Only add text if not custom?
+             # Simplified logic: If amount is a string (custom message), don't append WEAK/CRIT unless desired
+             # But amount can be "BLOCKED" string.
+             pass
+             
+        if isinstance(amount, (int, float)):
+             if is_weak: text += " WEAK!"
+             if is_crit: text += " CRIT!"
+        
         self.damage_numbers.append(DamageNumber(pos, text, color, size))
 
     def update(self):
