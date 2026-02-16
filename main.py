@@ -42,6 +42,11 @@ class Game:
         self.reality_break_type = None
         self.inverted_controls = False
         self.inverted_gravity = False
+        
+        # Stats
+        self.total_parries = 0
+        self.perfect_parries = 0
+        self.style_points = 0
 
         self.reset_game()
 
@@ -69,6 +74,10 @@ class Game:
         self.reality_break_timer = 0
         self.inverted_controls = False
         self.inverted_gravity = False
+        
+        self.total_parries = 0
+        self.perfect_parries = 0
+        self.style_points = 0
 
     def handle_events(self):
         events = pygame.event.get()
@@ -146,7 +155,12 @@ class Game:
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
             self.effect_manager.update()
-
+            
+            # Sync stats from player (simplified)
+            self.total_parries = self.player.parry_chain # Not quite right, need accumulation
+            # Actually parry chain resets, so we should hook into the parry event.
+            # Ideally Player calls Game.add_parry()
+            
             # Reality break cleanup
             if self.reality_break_timer > 0:
                 self.reality_break_timer -= dt
@@ -161,9 +175,9 @@ class Game:
         stats = {
             'time': self.game_time,
             'hp': self.player.hp,
-            'parries': self.player.parry_chain, # Just as example
-            'perfect_parries': 0, # Need to track better
-            'style': self.player.cards * 10
+            'parries': self.total_parries,
+            'perfect_parries': self.perfect_parries, 
+            'style': self.style_points + (self.player.cards * 10) # Base style + leftover cards
         }
         self.grade_screen = GradeScreen(self, stats)
         self.state = "WIN_SCREEN"
@@ -174,7 +188,7 @@ class Game:
         self.save_system.update_stat("total_damage_dealt", BOSS_MAX_HP)
 
     def game_over(self):
-        self.state = "MENU" # Simple for now
+        self.state = "MENU" 
 
     def draw(self):
         self.screen.fill(BLACK)

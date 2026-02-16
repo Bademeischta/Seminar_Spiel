@@ -1,41 +1,45 @@
 import pygame
-import random
 import math
+import random
 from constants import *
 from boss_projectiles import *
-from utils import draw_text, SpriteLoader
+from utils import draw_text, SoundManager
 
 class Boss(pygame.sprite.Sprite):
     def __init__(self, game):
         super().__init__()
         self.game = game
-        self.sprite_loader = SpriteLoader()
-        self.image = self.sprite_loader.get_sprite("sprites/Lehrer/Lehrer1/Lehrer1.jpeg", scale=2.0)
+        self.sound_manager = SoundManager()
+        
+        self.width = 100
+        self.height = 150
+        self.image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.midright = (950, 450)
-
+        
         self.hp = BOSS_MAX_HP
         self.max_hp = BOSS_MAX_HP
         self.phase = 1
         self.color = LIGHT_RED
-
+        
         self.pos = pygame.math.Vector2(self.rect.center)
         self.vibrate_offset = pygame.math.Vector2(0, 0)
-
+        
         # State Machine
         self.state = 'idle'
         self.state_timer = 120
         self.attack_pattern_index = 0
-
+        self.stun_timer = 0
+        
         # Phase transitions
         self.in_transition = False
         self.transition_timer = 0
-
+        
         # Weak point
         self.weak_point_rect = None
         self.weak_point_timer = 0
         self.flash_timer = 0
-
+        
         # Visuals
         self.float_offset = 0
         self.dialogue = ""
@@ -46,11 +50,18 @@ class Boss(pygame.sprite.Sprite):
             self.update_transition(dt)
             return
 
+        if self.stun_timer > 0:
+            self.stun_timer -= dt
+            # Visual stun effect (stars?)
+            if int(self.stun_timer) % 20 == 0:
+                self.game.effect_manager.add_damage_number(self.rect.midtop, "STUNNED!", color=YELLOW, size=20)
+            return
+
         self.check_phase()
         self.update_behavior(dt)
         self.update_weak_point(dt)
         self.update_visuals(dt)
-
+        
         self.rect.center = self.pos + self.vibrate_offset
 
     def check_phase(self):
@@ -59,15 +70,16 @@ class Boss(pygame.sprite.Sprite):
                 self.state = 'dead'
                 self.state_timer = 120 # Death animation time
                 self.game.effect_manager.apply_slowmo(120, 0.2)
+                self.game.effect_manager.apply_zoom(1.5, duration=120)
             return
 
         new_phase = 1
         if self.hp > PHASE_2_THRESHOLD: new_phase = 1
         elif self.hp > PHASE_3_THRESHOLD: new_phase = 2
         else: new_phase = 3
-
+        
         if new_phase > self.phase:
-            self.game.sound_manager.play("boss_transition")
+            self.sound_manager.play("boss_transition")
             self.start_transition(new_phase)
 
     def start_transition(self, next_phase):
@@ -76,11 +88,11 @@ class Boss(pygame.sprite.Sprite):
         self.transition_timer = 180 # 3 seconds
         self.state = 'transition'
         self.game.effect_manager.apply_shake(60, 10)
-
+        self.game.effect_manager.apply_zoom(0.8, duration=60) # Zoom out
+        
         if self.phase == 2:
             self.dialogue = "GENUG! Das Seminar gehört MIR!"
             self.color = ORANGE
-            # Remove a platform
             if self.game.platforms:
                 p = random.choice(self.game.platforms.sprites())
                 p.kill()
@@ -88,7 +100,6 @@ class Boss(pygame.sprite.Sprite):
             self.dialogue = "WENN ICH NICHT GEWINNE... DANN NIEMAND!"
             self.color = DARK_RED
             self.dialogue_timer = 120
-            # All platforms disappear
             for p in self.game.platforms:
                 p.kill()
 
@@ -100,9 +111,9 @@ class Boss(pygame.sprite.Sprite):
             self.state = 'idle'
             self.state_timer = 60
             self.vibrate_offset = pygame.math.Vector2(0, 0)
+            self.game.effect_manager.apply_zoom(1.0, duration=30) # Zoom back
             if self.phase == 3:
-                # Reality break effect
-                self.game.effect_manager.apply_shake(120, 5)
+                self.game.effect_manager.apply_shake(120, 5, type='rumble')
 
     def update_behavior(self, dt):
         if self.state == 'dead':
@@ -138,7 +149,7 @@ class Boss(pygame.sprite.Sprite):
             2: [self.eraser_attack_full, self.rain_attack_full, self.protractor_attack, self.slam_attack, self.laser_attack_double],
             3: [self.compass_hell_advanced, self.laser_attack_multi, self.teleport_strike, self.reality_break, self.blackboard_barrage]
         }
-
+        
         current_patterns = patterns[self.phase]
         pattern = current_patterns[self.attack_pattern_index % len(current_patterns)]
         pattern()
@@ -146,27 +157,42 @@ class Boss(pygame.sprite.Sprite):
         self.state = 'idle'
         self.state_timer = 120 if self.phase < 3 else 60
 
+    def stun(self, duration):
+        self.stun_timer = duration
+        self.state = 'stunned'
+        self.weak_point_timer = duration # Weak point while stunned!
+
     # --- Phase 1 Attacks ---
     def geometry_attack(self):
-        if self.phase == 1 and random.random() < 0.2:
+        if random.random() < 0.2:
             self.dialogue = random.choice(["So einfach gibst du auf?", "Zeig mir, was du gelernt hast!"])
             self.dialogue_timer = 90
-        # hand glow for weak point
-        self.weak_point_timer = 60
-        for i in range(3):
-            is_pink = (i == 2)
+        
+        self.weak_point_timer = 60 # Hand glow weak point
+        
+        # Advanced: Burst
+        count = 5 if random.random() < 0.5 else 3
+        for i in range(count):
+            is_pink = (i == 2 or i == 4)
             p = BossProjectile(self.game, self.rect.left, self.rect.centery, -5, 0, is_parryable=is_pink)
-            p.rect.x -= (2 - i) * 150
+            p.rect.x -= (count - 1 - i) * 100 # Spacing
+            if count == 5: # Fanned slightly
+                p.vel.y = (i - 2) * 1
             self.game.all_sprites.add(p)
             self.game.boss_bullets.add(p)
 
     def eraser_attack(self):
-        e = BouncingEraser(self.game, self.rect.centerx, self.rect.centery)
-        self.game.all_sprites.add(e)
-        self.game.boss_bullets.add(e)
+        # Chaos Mode: 2 erasers
+        e1 = BouncingEraser(self.game, self.rect.centerx, self.rect.centery, size_mult=1.0)
+        self.game.all_sprites.add(e1)
+        self.game.boss_bullets.add(e1)
+        
+        if random.random() < 0.5:
+            e2 = BouncingEraser(self.game, self.rect.centerx, self.rect.centery, size_mult=0.5, speed_mult=1.5)
+            self.game.all_sprites.add(e2)
+            self.game.boss_bullets.add(e2)
 
     def wipe_attack(self):
-        # Chalkboard wipe
         for i in range(5):
             is_pink = (i == 2)
             p = BossProjectile(self.game, SCREEN_WIDTH + i*40, i*120, -3, 0, color=WHITE, size=(40, 100), is_parryable=is_pink)
@@ -183,17 +209,21 @@ class Boss(pygame.sprite.Sprite):
 
     # --- Phase 2 Attacks ---
     def eraser_attack_full(self):
+        # Hard Mode: Left AND Right
         e1 = ChalkboardEraser(self.game, 'left')
         e2 = ChalkboardEraser(self.game, 'right')
-        e2.rect.x -= 200 # delay
+        e2.rect.x -= 300 # delay
         self.game.all_sprites.add(e1, e2)
         self.game.boss_bullets.add(e1, e2)
 
     def rain_attack_full(self):
+        # Wave spawning not easily done in one frame without a coroutine/timer system.
+        # Simplified: Spawn all with different start Y (delays appearance)
         for i in range(10):
             is_pink = (i in [3, 7])
             x = random.randint(50, 950)
-            p = EquationProjectile(self.game, x, -i*100, is_parryable=is_pink)
+            delay_y = -i * 200 # Spaced out vertically = wave effect
+            p = EquationProjectile(self.game, x, delay_y, is_parryable=is_pink)
             self.game.all_sprites.add(p)
             self.game.boss_bullets.add(p)
 
@@ -201,6 +231,7 @@ class Boss(pygame.sprite.Sprite):
         p = ProtractorSpin(self.game, self)
         self.game.all_sprites.add(p)
         self.game.boss_bullets.add(p)
+        self.weak_point_timer = 60 # Center is weak
 
     def slam_attack(self):
         s = TextbookSlam(self.game, self.game.player.rect.centerx)
@@ -217,47 +248,51 @@ class Boss(pygame.sprite.Sprite):
 
     # --- Phase 3 Attacks ---
     def compass_hell_advanced(self):
-        for burst in range(5):
-            num_projs = 8 if burst != 2 else 16
+        # 5 Bursts, rotating
+        # Again, needs coroutine. Simplified: Spawn 5 waves with different delays/positions
+        # We can spawn 5 projectiles that "burst" themselves later? 
+        # Or just spawn one massive wave for now to avoid complex timer logic in this class
+        for burst in range(3): # Reduced to 3 for performance/simplicity
+            num_projs = 8
             for i in range(num_projs):
-                angle = (i * (360/num_projs)) + (burst * 22.5)
+                angle = (i * (360/num_projs)) + (burst * 15)
                 rad = math.radians(angle)
-                p = BossProjectile(self.game, self.rect.centerx, self.rect.centery, math.cos(rad)*5, math.sin(rad)*5, is_parryable=(burst==3 and i%4==0))
-                p.rect.x += math.cos(rad) * burst * 40
-                p.rect.y += math.sin(rad) * burst * 40
+                speed = 4 + burst
+                p = BossProjectile(self.game, self.rect.centerx, self.rect.centery, math.cos(rad)*speed, math.sin(rad)*speed, is_parryable=(i%2==0))
                 self.game.all_sprites.add(p)
                 self.game.boss_bullets.add(p)
 
     def laser_attack_multi(self):
-        x = self.game.player.rect.centerx
-        for offset in [-150, 0, 150]:
-            l = Laser(self.game, self.game.player.rect.centery, duration=40)
-            # Actually the design says laser visors, then fire.
-            # Simplified for now.
-            self.game.all_sprites.add(l)
-            self.game.boss_bullets.add(l)
+        # Sweeping Laser
+        l = Laser(self.game, self.game.player.rect.centery, duration=120, rotation_speed=30)
+        self.game.all_sprites.add(l)
+        self.game.boss_bullets.add(l)
 
     def reality_break(self):
         effect = random.choice(['invert_controls', 'invert_gravity', 'slow_mo'])
         self.game.apply_reality_break(effect)
 
     def blackboard_barrage(self):
-        self.game.sound_manager.play("ultimate_attack")
+        self.sound_manager.play("ultimate_attack")
         self.dialogue = "IHR WERDET ALLE DURCHFALLEN!"
         self.dialogue_timer = 120
-        # This is a complex one, spawn many things
         self.eraser_attack()
         self.rain_attack_full()
         self.wipe_attack()
+        self.weak_point_timer = 180 # Exhausted after
 
     def teleport_strike(self):
-        target_pos = self.game.player.pos + pygame.math.Vector2(-100 if self.game.player.facing_right else 100, -50)
+        target_pos = self.game.player.pos + pygame.math.Vector2(-50 if self.game.player.facing_right else 50, -20)
         self.pos = target_pos
-        # Spawn a melee hit box
-        self.weak_point_timer = 60 # Recovery window
+        # Instant damage zone
+        hitbox = pygame.Rect(0, 0, 100, 100)
+        hitbox.center = self.rect.center
+        if hitbox.colliderect(self.game.player.rect):
+            self.game.player.take_damage()
+        self.weak_point_timer = 60 # Recovery
 
     def teleport(self):
-        self.game.sound_manager.play("teleport")
+        self.sound_manager.play("teleport")
         valid = False
         while not valid:
             new_x = random.randint(100, 900)
@@ -267,17 +302,22 @@ class Boss(pygame.sprite.Sprite):
                 valid = True
 
     def take_damage(self, amount):
-        self.game.sound_manager.play("boss_hit")
+        if self.hp <= 0: return
+        
+        self.sound_manager.play("boss_hit")
         multiplier = 1
+        is_weak = False
         if self.weak_point_timer > 0:
             multiplier = 2
             if self.phase == 3: multiplier = 4
+            is_weak = True
 
         actual_damage = amount * multiplier
         self.hp -= actual_damage
         self.flash_timer = 5
-        self.game.effect_manager.add_damage_number(self.rect.center, int(actual_damage), is_weak=(multiplier > 1))
+        self.game.effect_manager.add_damage_number(self.rect.center, int(actual_damage), is_weak=is_weak)
         self.game.effect_manager.apply_shake(5, 3)
+        
         if self.hp < 0: self.hp = 0
 
     def update_weak_point(self, dt):
@@ -292,7 +332,6 @@ class Boss(pygame.sprite.Sprite):
             self.dialogue_timer -= dt
         else:
             self.dialogue = ""
-
         if self.flash_timer > 0:
             self.flash_timer -= dt
 
@@ -302,15 +341,27 @@ class Boss(pygame.sprite.Sprite):
         draw_rect.y -= camera_offset.y
 
         if self.flash_timer > 0:
-            # Draw a white silhouette/rect for flash
             pygame.draw.rect(screen, WHITE, draw_rect)
         else:
-            # Color the boss based on phase if we don't have multiple sprites
-            # For now just blit and draw a colored border
-            screen.blit(self.image, draw_rect)
-            pygame.draw.rect(screen, self.color, draw_rect, 3)
+            # Draw Boss Face/Shape
+            pygame.draw.rect(screen, self.color, draw_rect)
+            pygame.draw.rect(screen, BLACK, draw_rect.inflate(-10, -10), 2)
+            
+            # Eyes
+            eye_color = YELLOW if self.phase == 2 else (RED if self.phase == 3 else WHITE)
+            pygame.draw.rect(screen, eye_color, (draw_rect.x + 20, draw_rect.y + 40, 20, 20))
+            pygame.draw.rect(screen, eye_color, (draw_rect.x + 60, draw_rect.y + 40, 20, 20))
+            
+            # Mouth
+            if self.dialogue:
+                pygame.draw.rect(screen, BLACK, (draw_rect.x + 30, draw_rect.y + 100, 40, 20)) # Open mouth
+            else:
+                pygame.draw.line(screen, BLACK, (draw_rect.x + 30, draw_rect.y + 110), (draw_rect.x + 70, draw_rect.y + 110), 3)
+
         if self.weak_point_timer > 0:
-             pygame.draw.rect(screen, YELLOW, draw_rect, 4)
+             # Pulsing weak point
+             pulse = math.sin(pygame.time.get_ticks() * 0.2) * 5
+             pygame.draw.rect(screen, YELLOW, draw_rect.inflate(10 + pulse, 10 + pulse), 4)
 
         if self.dialogue:
             draw_text(screen, self.dialogue, 24, draw_rect.centerx, draw_rect.top - 40, WHITE)

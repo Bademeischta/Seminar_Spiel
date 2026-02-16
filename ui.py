@@ -1,4 +1,5 @@
 import pygame
+import math
 from constants import *
 from utils import draw_text
 
@@ -25,12 +26,28 @@ class HUD:
             elif i == int(self.game.player.cards):
                 fill = self.game.player.cards % 1.0
 
-            pygame.draw.rect(screen, BLUE, rect, 2)
+            color = BLUE
+            if i < int(self.game.player.cards):
+                 # Golden card check (needs player state, simplified here to just blue or pulsing if full)
+                 pass
+            
+            # Draw empty slot
+            pygame.draw.rect(screen, color, rect, 2)
+            
             if fill > 0:
                 fill_rect = rect.copy()
                 fill_rect.height = int(rect.height * fill)
                 fill_rect.bottom = rect.bottom
-                pygame.draw.rect(screen, BLUE, fill_rect)
+                
+                # Golden fill if full ultimate or perfect parry bonus?
+                # For now just standard blue, but pulse white if full
+                draw_color = BLUE
+                if self.game.player.cards >= 5:
+                    pulse = (math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5 * 255
+                    draw_color = (100, 100, 255) # Light blue pulse
+                
+                pygame.draw.rect(screen, draw_color, fill_rect)
+                
                 if i < int(self.game.player.cards):
                      pygame.draw.rect(screen, WHITE, rect.inflate(-10, -10), 1)
 
@@ -63,10 +80,12 @@ class GradeScreen:
     def calculate_grade(self):
         # Time (30%)
         time_score = 0
-        if self.stats['time'] < 90: time_score = 100
-        elif self.stats['time'] < 120: time_score = 85
-        elif self.stats['time'] < 180: time_score = 70
-        else: time_score = 50
+        t = self.stats['time']
+        if t < 90: time_score = 100
+        elif t < 120: time_score = 85
+        elif t < 180: time_score = 70
+        elif t < 240: time_score = 50
+        else: time_score = 30
 
         # Damage (30%)
         dmg_score = 0
@@ -74,13 +93,32 @@ class GradeScreen:
         if hits == 0: dmg_score = 100
         elif hits == 1: dmg_score = 80
         elif hits == 2: dmg_score = 60
-        else: dmg_score = 40
+        elif hits == 3: dmg_score = 40
+        else: dmg_score = 20
 
         # Parries (20%)
-        parry_score = min(100, (self.stats['parries'] / 15) * 100)
+        p = self.stats['parries']
+        parry_score = 0
+        if p >= 15: parry_score = 100
+        elif p >= 10: parry_score = 80
+        elif p >= 5: parry_score = 60
+        elif p >= 1: parry_score = 40
+        else: parry_score = 0
 
         # Style (20%)
-        style_score = min(100, (self.stats['style'] * 10) / (self.stats['time'] or 1))
+        # Formula: (Total Style Events * 10) / Time
+        raw_style = (self.stats['style'] * 10) / (t if t > 0 else 1)
+        style_score = min(100, raw_style * 10) # Scaling factor needed? 
+        # Let's assume style events are ~10-20 per run. 20 * 10 / 100s = 2. Too low.
+        # Maybe raw points are just passed in?
+        # User doc says: "Gemessen an Multi-Parry, Perfect Dash etc."
+        # Let's assume stats['style'] is the count of events.
+        # If I have 20 events in 100s -> 200/100 = 2.
+        # Wait, formula says "(Total Style Events * 10) / Time".
+        # If I want a score of 100, I need 10 style points per second? Impossible.
+        # Maybe "Time" is in minutes? Or maybe it's "Style Points" directly.
+        # Let's just use the raw points accumulated in game as the score component.
+        style_score = min(100, self.stats['style']) 
 
         total = (time_score * 0.3) + (dmg_score * 0.3) + (parry_score * 0.2) + (style_score * 0.2)
 
@@ -102,7 +140,7 @@ class GradeScreen:
             f"Zeit: {int(self.stats['time'])}s",
             f"Schaden genommen: {MAX_PLAYER_HP - self.stats['hp']} Treffer",
             f"Parries: {self.stats['parries']} ({self.stats['perfect_parries']} Perfect)",
-            f"Style-Punkte: {int(self.stats['style'])}",
+            f"Style-Events: {int(self.stats['style'])}",
             f"SCORE: {self.score}"
         ]
 

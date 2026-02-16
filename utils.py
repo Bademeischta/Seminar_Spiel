@@ -1,8 +1,12 @@
 import pygame
+import random
 from constants import WHITE, BLACK
 
 def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True):
-    font = pygame.font.SysFont("Arial", size, bold=True)
+    try:
+        font = pygame.font.SysFont("Arial", size, bold=True)
+    except:
+        font = pygame.font.Font(None, size)
 
     if shadow:
         shadow_surf = font.render(text, True, BLACK)
@@ -21,41 +25,32 @@ def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True):
         rect.topleft = (x, y)
     screen.blit(surf, rect)
 
-class SpriteLoader:
+class SoundManager:
     _instance = None
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(SpriteLoader, cls).__new__(cls)
-            cls._instance.sprites = {}
+            cls._instance = super(SoundManager, cls).__new__(cls)
+            cls._instance.initialized = False
         return cls._instance
 
-    def get_sprite(self, path, scale=1.0):
-        key = (path, scale)
-        if key not in self.sprites:
-            try:
-                img = pygame.image.load(path).convert_alpha()
-                if scale != 1.0:
-                    w, h = img.get_size()
-                    img = pygame.transform.scale(img, (int(w * scale), int(h * scale)))
-                self.sprites[key] = img
-            except Exception as e:
-                print(f"Error loading sprite {path}: {e}")
-                # Return placeholder
-                surf = pygame.Surface((50, 50))
-                surf.fill((255, 0, 255))
-                self.sprites[key] = surf
-        return self.sprites[key]
-
-class SoundManager:
     def __init__(self):
-        self.sounds = {}
-        # pygame.mixer.init() # Already initialized by pygame.init() usually
+        if not self.initialized:
+            self.sounds = {}
+            self.music_layers = {
+                'base': None,
+                'intensity': None,
+                'danger': None,
+                'chaos': None
+            }
+            self.current_layers = []
+            self.initialized = True
+            print("SoundManager initialized (Placeholder Mode)")
 
     def play(self, name):
         # Placeholder for real sound playing
         # print(f"Playing sound: {name}")
         pass
 
-    def play_beep(self, freq, duration):
-        # Could implement actual beeps if needed
+    def update_music_layers(self, hp_percent):
+        # Logic to crossfade layers based on HP
         pass
