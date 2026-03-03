@@ -133,5 +133,7 @@ Um das Spiel zu vervollständigen, wurden zwei zusätzliche Modi geplant:
 ### D. Finaler Polish & Stabilitäts-Fixes
 * **Fehlerschutz:** Alle Zugriffe auf das `challenge`-Objekt wurden mit Sicherheitsabfragen versehen (`if self.game.challenge`), um Abstürze (`AttributeError`) im normalen Spielmodus zu verhindern.
 * **Code-Optimierung:** Kritische Importe wurden an den Dateianfang verschoben, um die Performance in der Render-Schleife zu verbessern.
+* **Refinement:** Spezialisierte Projektile für den Parry-Only Modus (`ParryDamageProjectile`) und visuelles Feedback für den Jump-Buffer hinzugefügt.
+* **Balancing:** Boss-HP in der One-Hit-KO Challenge auf 50 reduziert und Boss-Rush Timer auf 30 Frames optimiert.
 
 **Aktueller Status:** Das Projekt ist nun vollständig stabil, mechanisch ausgefeilt und durch die neuen Spielmodi inhaltlich komplettiert.

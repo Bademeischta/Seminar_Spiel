@@ -156,6 +156,7 @@ class Player(pygame.sprite.Sprite):
         # Jump Buffer for Ground Parry
         if self.is_grounded:
             self.jump_buffer = 3
+            self.add_ability_label("JUMP BUFFER")
             return
 
         self.perform_jump()
@@ -572,15 +573,15 @@ class Player(pygame.sprite.Sprite):
             if len(self.game.action_log) > 5:
                 self.game.action_log.pop(0)
 
-        # Challenge Parry Only
-        if self.game.challenge:
-             self.game.challenge.handle_parry_damage(self.perfect_parry_window > 0)
-
         if not getattr(projectile, 'is_parryable', False):
             self.sound_manager.play("parry_fail")
             self.take_damage()
             projectile.kill()
             return
+
+        # Challenge Parry Only
+        if self.game.challenge:
+             self.game.challenge.handle_parry_damage(self.perfect_parry_window > 0)
 
         projectile.kill()
         is_perfect = self.perfect_parry_window > 0

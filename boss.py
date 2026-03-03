@@ -53,6 +53,9 @@ class Boss(pygame.sprite.Sprite):
         self.shield_timer = 0
 
     def update(self, dt=1.0):
+        if self.game.state == "DEMO":
+            return # Block all logic including transitions in demo, unless triggered manually
+
         if self.in_transition:
             self.update_transition(dt)
             return

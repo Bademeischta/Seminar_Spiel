@@ -204,7 +204,14 @@ class Game:
 
             # Update sprites
             self.player.update(dt)
-            self.boss.update(dt)
+            # In demo mode, boss logic is largely handled by demo.py and manual triggers
+            if self.state == "PLAYING":
+                self.boss.update(dt)
+            else:
+                # In Demo, only update boss visuals (flash, weakpoint etc)
+                self.boss.update_weak_point(dt)
+                self.boss.update_visuals(dt)
+                self.boss.rect.center = self.boss.pos + self.boss.vibrate_offset
             self.player_bullets.update(dt)
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
@@ -340,6 +347,7 @@ class Game:
 
     def handle_demo_ability(self, ability):
         self.player.add_ability_label(ability.upper())
+
         if ability == "Basis-Schuss":
             self.player.shoot_basic()
         elif ability == "Charge Shot":
@@ -362,15 +370,26 @@ class Game:
             self.player.shoot_ex()
         elif ability == "Ultimate Laser":
             self.player.cards = 5
-            self.player.shoot_ex()
+            # Force ultimate shoot regardless of selected_ex
+            bullet = EXSuper(self, self.player.rect.centerx, self.player.rect.centery, 1 if self.player.facing_right else -1)
+            self.all_sprites.add(bullet)
+            self.player_bullets.add(bullet)
+            self.effect_manager.apply_shake(60, 15)
+            self.effect_manager.apply_zoom(1.3, duration=30)
         elif ability == "Dash (normal)":
             self.player.dash()
         elif ability == "Super-Dash":
-            # Force super dash
+            # Force super dash bypass
             self.player.cards = 1
-            # We need to simulate CTRL press or change dash logic
-            # Simplified: just call dash and hope cards are consumed
-            self.player.dash()
+            self.player.is_super_dash = True
+            self.player.sound_manager.play("super_dash")
+            self.player.is_dashing = True
+            self.player.dash_timer = PLAYER_DASH_DURATION * 2
+            self.player.dash_cooldown_timer = PLAYER_DASH_COOLDOWN
+            self.player.i_frames = self.player.dash_timer
+            self.player.perfect_dash_window = 10
+            self.player.dash_direction = pygame.math.Vector2(1 if self.player.facing_right else -1, 0)
+            self.particle_manager.spawn_speed_lines()
         elif ability == "Slam Down":
             # Trigger slam by setting velocity
             self.player.vel.y = PLAYER_DASH_SPEED * 1.5

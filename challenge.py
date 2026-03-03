@@ -1,7 +1,7 @@
 import pygame
 import random
 from constants import *
-from projectiles import PlayerProjectile
+from projectiles import PlayerProjectile, ParryDamageProjectile
 
 class ChallengeMode:
     def __init__(self, game, challenge_name):
@@ -61,8 +61,7 @@ class ChallengeMode:
             dmg = 10 if is_perfect else 5
             # Spawn a visual projectile from player to boss
             dir_x = 10 if self.game.player.facing_right else -10
-            bullet = PlayerProjectile(self.game, self.game.player.rect.centerx, self.game.player.rect.centery, dir_x, 0, dmg, GOLD)
-            bullet.is_homing = True
+            bullet = ParryDamageProjectile(self.game, self.game.player.rect.centerx, self.game.player.rect.centery, dir_x, 0, dmg)
             self.game.all_sprites.add(bullet)
             self.game.player_bullets.add(bullet)
 

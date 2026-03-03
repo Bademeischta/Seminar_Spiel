@@ -171,6 +171,22 @@ class EXRuler(PlayerProjectile):
 
         super().update(dt)
 
+class ParryDamageProjectile(PlayerProjectile):
+    def __init__(self, game, x, y, vel_x, vel_y, damage):
+        super().__init__(game, x, y, vel_x, vel_y, damage, GOLD, (15, 15))
+        self.is_homing = True
+
+    def draw(self, screen, camera_offset):
+        # Distinct star shape for parry damage
+        points = []
+        center = (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y)
+        for i in range(10):
+            angle = math.radians(i * 36 + self.angle)
+            r = 10 if i % 2 == 0 else 4
+            points.append((center[0] + math.cos(angle) * r, center[1] + math.sin(angle) * r))
+        pygame.draw.polygon(screen, self.color, points)
+        pygame.draw.polygon(screen, WHITE, points, 1)
+
 class EXSuper(PlayerProjectile):
     def __init__(self, game, x, y, direction):
         super().__init__(game, x, y, 0, 0, 0.3, YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
@@ -191,11 +207,11 @@ class EXSuper(PlayerProjectile):
                 bullet.kill()
 
         # Damage boss every frame
-        if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < 25:
+        if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < EX_SUPER_DAMAGE_CAP:
             dmg = self.damage * dt
-            # Cap damage at 25 HP
-            if self.total_damage_dealt + dmg > 25:
-                dmg = 25 - self.total_damage_dealt
+            # Cap damage
+            if self.total_damage_dealt + dmg > EX_SUPER_DAMAGE_CAP:
+                dmg = EX_SUPER_DAMAGE_CAP - self.total_damage_dealt
 
             self.game.boss.take_damage(dmg)
             self.total_damage_dealt += dmg
