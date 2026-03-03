@@ -3,8 +3,8 @@ import math
 import random
 from constants import *
 from projectiles import PlayerProjectile, EXFlieger, EXEraser, EXRuler, EXSuper, SpreadProjectile, HomingProjectile
-from utils import SoundManager
-from effects import AfterimageParticle
+from utils import SoundManager, draw_text
+from effects import AfterimageParticle, SquareParticle, StarParticle
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, game, x, y):
@@ -76,12 +76,20 @@ class Player(pygame.sprite.Sprite):
         self.selected_ex = "Flieger"
         self.focus_time = FOCUS_MAX_TIME
         self.is_focusing = False
+        self.can_dash = True
+        self.jump_buffer = 0
+        self.prev_on_wall = None
 
         self.drop_timer = 0
+        self.ability_labels = [] # List of {text, timer}
 
     def handle_input(self):
         keys = pygame.key.get_pressed()
         mouse = pygame.mouse.get_pressed()
+
+        # Action Log for Mirror Match (max 5 actions)
+        if not hasattr(self.game, 'action_log'):
+            self.game.action_log = []
 
         move_left = keys[pygame.K_a]
         move_right = keys[pygame.K_d]
@@ -89,10 +97,13 @@ class Player(pygame.sprite.Sprite):
             move_left, move_right = move_right, move_left
 
         # Focus Mode
-        if keys[pygame.K_LSHIFT] and not self.is_dashing and self.focus_time > 0:
-            self.is_focusing = True
-            self.game.effect_manager.time_scale = 0.5
-            self.focus_time -= 1
+        if keys[pygame.K_f] and not self.is_dashing and self.focus_time > 0:
+            if self.game.effect_manager.slowmo_timer <= 0:
+                self.is_focusing = True
+                self.game.effect_manager.time_scale = 0.5
+                self.focus_time -= 1
+            else:
+                self.is_focusing = False
         else:
             self.is_focusing = False
             if self.focus_time < FOCUS_MAX_TIME:
@@ -144,6 +155,14 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_5]: self.selected_ex = "Homing"
 
     def jump(self):
+        # Jump Buffer for Ground Parry
+        if self.is_grounded:
+            self.jump_buffer = 3
+            return
+
+        self.perform_jump()
+
+    def perform_jump(self):
         # Wall Jump
         if self.on_wall:
             self.sound_manager.play("jump")
@@ -156,7 +175,7 @@ class Player(pygame.sprite.Sprite):
             return
 
         # Air/Double/Triple Jump
-        if self.jump_count < self.max_jumps:
+        if self.jump_count < self.max_jumps or self.is_grounded:
             self.sound_manager.play("jump")
             
             # Parry Boost
@@ -168,7 +187,7 @@ class Player(pygame.sprite.Sprite):
             self.vel.y = force
             
             # Directional Air Jump
-            if self.jump_count > 0: 
+            if self.jump_count > 0 and not self.is_grounded:
                 keys = pygame.key.get_pressed()
                 if keys[pygame.K_a]: self.vel.x = -PLAYER_MAX_SPEED
                 if keys[pygame.K_d]: self.vel.x = PLAYER_MAX_SPEED
@@ -185,7 +204,14 @@ class Player(pygame.sprite.Sprite):
             self.game.effect_manager.apply_shake(5, 2, type='directional', vector=(0, 1))
 
     def dash(self):
+        if not self.can_dash:
+            return
+
         if self.dash_cooldown_timer <= 0:
+            if hasattr(self.game, 'action_log'):
+                self.game.action_log.append("dash")
+                if len(self.game.action_log) > 5:
+                    self.game.action_log.pop(0)
             keys = pygame.key.get_pressed()
             # Super Dash Check (Hold CTRL or Shift+Space logic if needed, here we use CTRL modifier)
             cost = 1 if (keys[pygame.K_LCTRL]) else 0
@@ -235,7 +261,14 @@ class Player(pygame.sprite.Sprite):
         self.shield_cooldown = SHIELD_COOLDOWN
 
     def shoot_basic(self):
+        if self.game.challenge and self.game.challenge.name == "Parry Only":
+            return
+
         if self.shoot_timer <= 0:
+            if hasattr(self.game, 'action_log'):
+                self.game.action_log.append("shoot")
+                if len(self.game.action_log) > 5:
+                    self.game.action_log.pop(0)
             self.sound_manager.play("shoot")
             damage = 1
             color = BLUE
@@ -259,6 +292,12 @@ class Player(pygame.sprite.Sprite):
             self.shoot_timer = 10
 
     def shoot_charge(self):
+        if self.game.challenge and self.game.challenge.name == "Parry Only":
+            return
+        if hasattr(self.game, 'action_log'):
+            self.game.action_log.append("shoot")
+            if len(self.game.action_log) > 5:
+                self.game.action_log.pop(0)
         self.sound_manager.play("charge_shot")
         bullet = PlayerProjectile(self.game, self.rect.centerx, self.rect.centery,
                                  15 if self.facing_right else -15, 0, 3, LIGHT_BLUE, size=(30, 30))
@@ -266,6 +305,8 @@ class Player(pygame.sprite.Sprite):
         self.game.player_bullets.add(bullet)
         
     def shoot_spread(self):
+        if self.game.challenge and self.game.challenge.name == "Parry Only":
+            return
         if self.cards >= 2:
             self.cards -= 2
             self.sound_manager.play("shoot_spread") # 5x pew logic handled in sound manager ideally
@@ -279,6 +320,8 @@ class Player(pygame.sprite.Sprite):
                 self.game.player_bullets.add(bullet)
 
     def shoot_homing(self):
+        if self.game.challenge and self.game.challenge.name == "Parry Only":
+            return
         if self.cards >= 3:
             self.cards -= 3
             self.sound_manager.play("shoot_homing")
@@ -288,6 +331,13 @@ class Player(pygame.sprite.Sprite):
                 self.game.player_bullets.add(bullet)
 
     def shoot_ex(self):
+        if self.game.challenge and self.game.challenge.name == "Parry Only":
+            return
+        if hasattr(self.game, 'action_log'):
+            self.game.action_log.append("shoot")
+            if len(self.game.action_log) > 5:
+                self.game.action_log.pop(0)
+
         if self.cards >= 5: # Ultimate
             self.sound_manager.play("ultimate")
             self.cards -= 5
@@ -326,8 +376,17 @@ class Player(pygame.sprite.Sprite):
                 self.game.player_bullets.add(bullet)
                 self.game.effect_manager.apply_shake(10, 3)
 
+    def add_ability_label(self, text):
+        self.ability_labels.append({"text": text, "timer": 120})
+
     def update(self, dt=1.0):
         self.handle_input()
+
+        if self.jump_buffer > 0:
+            self.jump_buffer -= 1
+            if self.jump_buffer <= 0:
+                self.perform_jump()
+
         self.apply_gravity(dt)
         self.update_physics(dt)
         self.check_collisions()
@@ -350,10 +409,8 @@ class Player(pygame.sprite.Sprite):
             
             # Trail Logic
             if int(self.dash_timer) % 3 == 0:
-                self.game.particle_manager.add(pygame.sprite.Sprite()) # Hack? No, use AfterimageParticle
-                # We need to pass the current drawn image to the particle
-                # We will do this in draw() actually or create a method to get current image
-                pass # Handled in draw/particle manager
+                if not self.is_super_dash:
+                    self.game.particle_manager.add(SquareParticle(self.rect.center, (0, 0), 12, WHITE, 6))
 
         else:
             self.acc.x += self.vel.x * PLAYER_FRICTION
@@ -372,7 +429,7 @@ class Player(pygame.sprite.Sprite):
             
             # Spawn dash particles
             if self.is_super_dash and random.random() < 0.5:
-                 self.game.particle_manager.add(pygame.sprite.Sprite()) # Placeholder logic
+                 self.game.particle_manager.add(StarParticle(self.rect.center, (random.uniform(-2, 2), random.uniform(-2, 2)), 20, BLUE, 8))
 
         if self.dash_cooldown_timer > 0: self.dash_cooldown_timer -= dt
         if self.perfect_dash_window > 0: self.perfect_dash_window -= dt
@@ -385,9 +442,13 @@ class Player(pygame.sprite.Sprite):
             self.parry_chain_timer -= dt
             if self.parry_chain_timer <= 0: 
                 self.parry_chain = 0
-                self.streber_mode = False
+                if self.parry_counter_timer <= 0:
+                    self.streber_mode = False
 
-        if self.parry_counter_timer > 0: self.parry_counter_timer -= dt
+        if self.parry_counter_timer > 0:
+            self.parry_counter_timer -= dt
+            if self.parry_counter_timer <= 0:
+                self.streber_mode = False
         if self.shoot_timer > 0: self.shoot_timer -= dt
         if self.shield_cooldown > 0: self.shield_cooldown -= dt
         if self.wall_cling_timer > 0: self.wall_cling_timer -= dt
@@ -397,6 +458,12 @@ class Player(pygame.sprite.Sprite):
             # Lerp back to 1.0
             self.squash_factor += (pygame.math.Vector2(1.0, 1.0) - self.squash_factor) * 0.2
 
+        # Update ability labels
+        for label in self.ability_labels[:]:
+            label["timer"] -= dt
+            if label["timer"] <= 0:
+                self.ability_labels.remove(label)
+
     def update_animation(self, dt):
         pass # Procedural handled in draw
 
@@ -405,12 +472,14 @@ class Player(pygame.sprite.Sprite):
         if not self.is_grounded and not self.is_dashing:
             if self.rect.left <= 0:
                 self.on_wall = 'left'
-                self.wall_cling_timer = WALL_CLING_TIME
+                if self.prev_on_wall is None:
+                    self.wall_cling_timer = WALL_CLING_TIME
                 if self.wall_cling_timer > 0:
                     self.vel.y = min(self.vel.y, 2)
             elif self.rect.right >= SCREEN_WIDTH:
                 self.on_wall = 'right'
-                self.wall_cling_timer = WALL_CLING_TIME
+                if self.prev_on_wall is None:
+                    self.wall_cling_timer = WALL_CLING_TIME
                 if self.wall_cling_timer > 0:
                     self.vel.y = min(self.vel.y, 2)
             else:
@@ -448,6 +517,30 @@ class Player(pygame.sprite.Sprite):
                 self.jump_count = 0
                 self.max_jumps = 2 if not self.streber_mode else 3
 
+        self.prev_on_wall = self.on_wall
+
+        # Platforms
+        plat_hits = pygame.sprite.spritecollide(self, self.game.platforms, False)
+        for platform in plat_hits:
+            if not self.game.inverted_gravity:
+                if self.vel.y > 0 and self.rect.bottom <= platform.rect.bottom + 10:
+                    self.pos.y = platform.rect.top
+                    self.vel.y = 0
+                    self.is_grounded = True
+                    self.can_air_dash = True
+                    self.jump_count = 0
+                    self.max_jumps = 2 if not self.streber_mode else 3
+                    self.rect.bottom = int(self.pos.y)
+            else:
+                if self.vel.y < 0 and self.rect.top >= platform.rect.top - 10:
+                    self.pos.y = platform.rect.bottom + self.height
+                    self.vel.y = 0
+                    self.is_grounded = True
+                    self.can_air_dash = True
+                    self.jump_count = 0
+                    self.max_jumps = 2 if not self.streber_mode else 3
+                    self.rect.bottom = int(self.pos.y)
+
         # Boss Interaction
         hits = pygame.sprite.spritecollide(self, self.game.boss_bullets, False)
         for projectile in hits:
@@ -457,6 +550,8 @@ class Player(pygame.sprite.Sprite):
                     self.cards = min(self.cards + 0.5, MAX_CARDS)
                     self.game.effect_manager.add_damage_number(self.rect.center, "PERFECT DASH", color=CYAN, size=16)
                     self.game.effect_manager.apply_slowmo(10, 0.8)
+                    self.game.particle_manager.spawn_hit(projectile.rect.center, color=CYAN)
+                projectile.kill()
                 continue
 
             if self.parry_active_timer > 0:
@@ -470,6 +565,15 @@ class Player(pygame.sprite.Sprite):
                 projectile.kill()
 
     def handle_parry(self, projectile):
+        if hasattr(self.game, 'action_log'):
+            self.game.action_log.append("parry")
+            if len(self.game.action_log) > 5:
+                self.game.action_log.pop(0)
+
+        # Challenge Parry Only
+        if self.game.challenge:
+             self.game.challenge.handle_parry_damage(self.perfect_parry_window > 0)
+
         if not getattr(projectile, 'is_parryable', False):
             self.sound_manager.play("parry_fail")
             self.take_damage()
@@ -501,13 +605,20 @@ class Player(pygame.sprite.Sprite):
 
         if self.parry_chain >= 3:
             self.streber_mode = True
+            self.parry_chain_timer = 600
             self.parry_counter_timer = 600 # 10s
             self.game.effect_manager.add_damage_number(self.rect.center, "STREBER MODE!", color=GOLD, size=32)
 
     def take_damage(self):
         self.sound_manager.play("hit")
         self.hp -= 1
-        self.i_frames = 60
+
+        if self.game.challenge and self.game.challenge.name == "One Hit KO":
+             self.hp = 0
+             self.i_frames = 0
+        else:
+             self.i_frames = 60
+
         self.game.effect_manager.apply_shake(20, 10)
         self.game.particle_manager.spawn_hit(self.rect.center, color=RED)
         self.momentum_boost = 1.0
@@ -522,6 +633,19 @@ class Player(pygame.sprite.Sprite):
         self.game.particle_manager.spawn_dust((self.rect.centerx, self.rect.bottom))
 
     def draw(self, screen, camera_offset):
+        # Ability Labels
+        for label in self.ability_labels:
+            # Animation: fade in 20, hold 80, fade out 20
+            t = label["timer"]
+            alpha = 255
+            if t > 100:
+                alpha = int((120 - t) / 20 * 255)
+            elif t < 20:
+                alpha = int(t / 20 * 255)
+
+            # Gold color with black shadow and alpha fade
+            draw_text(screen, label["text"], 36, self.rect.centerx - camera_offset.x, self.rect.top - 80 - camera_offset.y, color=GOLD, alpha=alpha)
+
         # Procedural Draw
         draw_x = self.pos.x - camera_offset.x
         draw_y = self.pos.y - camera_offset.y
@@ -553,7 +677,7 @@ class Player(pygame.sprite.Sprite):
             # Create a surface for afterimage
             surf = pygame.Surface((w, h), pygame.SRCALPHA)
             pygame.draw.rect(surf, color, (0, 0, w, h))
-            self.game.particle_manager.add(AfterimageParticle(pygame.math.Vector2(rect.center), surf, 15, 150))
+            self.game.particle_manager.add(AfterimageParticle(pygame.math.Vector2(rect.topleft), surf, 15, 150))
 
         # Charge Meter
         if self.is_charging:

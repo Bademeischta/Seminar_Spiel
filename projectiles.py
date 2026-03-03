@@ -135,7 +135,9 @@ class EXEraser(PlayerProjectile):
         # Create explosion
         self.game.particle_manager.spawn_hit(self.rect.center, color=PURPLE)
         # Damage boss if in range
-        if self.game.boss.rect.inflate(100, 100).colliderect(self.rect):
+        explosion_rect = pygame.Rect(0, 0, 200, 200)
+        explosion_rect.center = self.rect.center
+        if explosion_rect.colliderect(self.game.boss.rect):
              self.game.boss.take_damage(3) # Central damage
         super().kill()
 
@@ -171,11 +173,12 @@ class EXRuler(PlayerProjectile):
 
 class EXSuper(PlayerProjectile):
     def __init__(self, game, x, y, direction):
-        super().__init__(game, x, y, 0, 0, 1.5, YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
-        self.lifetime = 60
+        super().__init__(game, x, y, 0, 0, 0.3, YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
+        self.lifetime = 45
         self.rect.midleft = (0, y) if direction > 0 else (SCREEN_WIDTH, y)
         if direction < 0: self.rect.right = SCREEN_WIDTH
         else: self.rect.left = 0
+        self.total_damage_dealt = 0
 
     def update(self, dt=1.0):
         self.lifetime -= dt
@@ -187,8 +190,14 @@ class EXSuper(PlayerProjectile):
             bullet.kill()
 
         # Damage boss every frame
-        if self.game.boss.rect.colliderect(self.rect):
-            self.game.boss.take_damage(self.damage * dt)
+        if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < 25:
+            dmg = self.damage * dt
+            # Cap damage at 25 HP
+            if self.total_damage_dealt + dmg > 25:
+                dmg = 25 - self.total_damage_dealt
+
+            self.game.boss.take_damage(dmg)
+            self.total_damage_dealt += dmg
 
     def draw(self, screen, camera_offset):
         # Draw huge laser

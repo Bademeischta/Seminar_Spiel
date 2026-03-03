@@ -17,7 +17,12 @@ class SaveSystem:
                 "total_damage_dealt": 0,
                 "total_distance_moved": 0,
                 "total_dashes": 0,
-                "total_perfect_parries": 0
+                "total_perfect_parries": 0,
+                "best_grade_No_Dash": "D",
+                "best_grade_One_Hit_KO": "D",
+                "best_grade_Parry_Only": "D",
+                "best_grade_Boss_Rush": "D",
+                "best_grade_Mirror_Match": "D"
             },
             "unlocks": {
                 "skins": ["Standard"],

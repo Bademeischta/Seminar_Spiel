@@ -75,3 +75,63 @@ Die unsichtbare Magie wurde durch Code-basierte Effekte implementiert:
 * **JSON-Save:** Einfach lesbares Format für Spieler-Fortschritte, das leicht erweiterbar ist (z.B. für Unlocks).
 
 **Fazit:** Aus einem einfachen Prototyp wurde ein modulares Grundgerüst für ein professionelles Indie-Spiel entwickelt, das alle Anforderungen des "Ultimate Design Master-Dokuments" erfüllt.
+
+---
+
+## 5. Phase: Bug-Identifikation & Qualitätssicherung
+
+Nach der ersten stabilen Version wurden im Rahmen der Qualitätssicherung 16 kritische Probleme identifiziert, die die Spielbarkeit beeinträchtigten:
+
+### Gamebreaking / Stabilität
+* Dash-System crasht aufgrund leerer Sprite-Referenzen im Particle Manager.
+* Focus-Mode (LSHIFT) kollidiert mit der Dash-Eingabe (LSHIFT).
+* Der Ultimate Laser verursacht unverhältnismäßig hohen Schaden (~90 HP).
+* Die Teleport-Routine des Bosses führt bei bestimmten Spielerpositionen zu Endlosschleifen.
+* Die Siegbedingung wird aufgrund fehlerhafter `alive()`-Prüfungen nie ausgelöst.
+
+### Mechanische & Visuelle Mängel
+* Parry ist fälschlicherweise nur im Sprung aktivierbar.
+* Projektile bleiben nach Dash-Kollisionen ohne Zerstörung stehen.
+* Streber-Mode Timer und Parry-Chain Timer laufen desynchron.
+* Wall-Cling Timer wird fälschlicherweise in jedem Frame resettet.
+* Plattformen hinterlassen nach ihrer Zerstörung in Phase 3 aktive Sprite-Referenzen.
+
+---
+
+## 6. Phase: Feature-Roadmap (Geplante Erweiterungen)
+
+Um das Spiel zu vervollständigen, wurden zwei zusätzliche Modi geplant:
+1.  **Challenge-Modus:** Ein System zur Auswahl spezieller Herausforderungen mit einzigartigen Modifiern (z.B. No Dash, One Hit KO).
+2.  **Demo-Modus:** Ein Showcase-Tool mit Ability-Overlay für Präsentationen.
+
+---
+
+## 7. Phase: Finale Umsetzung & Optimierung (Aktueller Stand)
+
+### A. Detaillierte Fehlerbehebung (Was, Warum, Wie?)
+
+| Problem | Lösung (Wie?) | Warum? |
+| :--- | :--- | :--- |
+| **Dash-Partikel-Crash** | Umstellung auf `SquareParticle` & `StarParticle` in `player.py`. | Verhindert `AttributeError` beim Zeichnen; sorgt für visuelles Feedback. |
+| **Input-Konflikt** | Focus-Mode auf Taste `F` verschoben. | Ermöglicht simultane Nutzung von Dash und Focus ohne Eingabe-Überlagerung. |
+| **Ultimate-Balancing** | Schaden auf 0.3 reduziert + 25 HP Cap pro Cast eingeführt. | Erhält die Spannung des Bosskampfes und verhindert "Instant Wins". |
+| **Teleport-Stabilität** | Attempts-Counter + Fallback-Logik in `boss.py`. | Garantiert Spielbarkeit auch bei ungünstigen Spielerpositionen. |
+| **Ground Parry** | 3-Frame Jump-Buffer implementiert. | Erlaubt sauberes Parieren am Boden ohne ungewollte Sprünge. |
+| **Wand-Cling Logik** | `prev_on_wall` Variable zur Status-Prüfung ergänzt. | Stellt sicher, dass der Cling-Timer nur beim Erstkontakt startet. |
+| **Plattform-Cleanup** | `platforms.empty()` Aufruf in Phase 3 hinzugefügt. | Verhindert Geister-Kollisionen mit unsichtbaren Plattform-Resten. |
+
+### B. Implementierung des Challenge-Modus (`challenge.py`)
+*   **Was:** 5 Herausforderungen (No Dash, One Hit KO, Parry Only, Boss Rush, Mirror Match).
+*   **Wie:** Modulares System, das beim Starten des Spiels Modifier setzt (z.B. HP-Limit, Boss-Speedup).
+*   **Warum:** Maximiert den Wiederspielwert und belohnt Skill-basiertes Gameplay mit neuen Skins.
+
+### C. Implementierung des Demo-Modus (`demo.py`)
+*   **Was:** Unendliche HP/Karten und ein Ability-Showcase Panel (Overlay).
+*   **Wie:** Ein umschaltbares Menü (TAB) triggert spezifische Player/Boss Methoden; Ability-Labels folgen dem Spieler.
+*   **Warum:** Ermöglicht eine reibungslose Präsentation aller Spielmechaniken ohne Risiko eines Game Overs.
+
+### D. Finaler Polish & Stabilitäts-Fixes
+* **Fehlerschutz:** Alle Zugriffe auf das `challenge`-Objekt wurden mit Sicherheitsabfragen versehen (`if self.game.challenge`), um Abstürze (`AttributeError`) im normalen Spielmodus zu verhindern.
+* **Code-Optimierung:** Kritische Importe wurden an den Dateianfang verschoben, um die Performance in der Render-Schleife zu verbessern.
+
+**Aktueller Status:** Das Projekt ist nun vollständig stabil, mechanisch ausgefeilt und durch die neuen Spielmodi inhaltlich komplettiert.

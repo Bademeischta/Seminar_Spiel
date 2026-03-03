@@ -34,6 +34,7 @@ class Boss(pygame.sprite.Sprite):
         # Phase transitions
         self.in_transition = False
         self.transition_timer = 0
+        self.is_dying = False
         
         # Weak point
         self.weak_point_rect = None
@@ -47,6 +48,9 @@ class Boss(pygame.sprite.Sprite):
         
         self.reality_break_warning_timer = 0
         self.reality_break_pending_type = None
+
+        self.shield_active = False
+        self.shield_timer = 0
 
     def update(self, dt=1.0):
         if self.in_transition:
@@ -83,6 +87,7 @@ class Boss(pygame.sprite.Sprite):
         if self.hp <= 0:
             if self.state != 'dead':
                 self.state = 'dead'
+                self.is_dying = True
                 self.state_timer = 120 # Death animation time
                 self.game.effect_manager.apply_slowmo(120, 0.2)
                 self.game.effect_manager.apply_zoom(1.5, duration=120)
@@ -117,6 +122,7 @@ class Boss(pygame.sprite.Sprite):
             self.dialogue_timer = 120
             for p in self.game.platforms:
                 p.kill()
+            self.game.platforms.empty()
 
     def update_transition(self, dt):
         self.transition_timer -= dt
@@ -126,7 +132,7 @@ class Boss(pygame.sprite.Sprite):
             self.state = 'idle'
             self.state_timer = 60
             self.vibrate_offset = pygame.math.Vector2(0, 0)
-            self.game.effect_manager.apply_zoom(1.0, duration=30) # Zoom back
+            self.game.effect_manager.apply_zoom(1.0, duration=30) # Zoom back for all phases
             if self.phase == 3:
                 self.game.effect_manager.apply_shake(120, 5, type='rumble')
 
@@ -170,7 +176,12 @@ class Boss(pygame.sprite.Sprite):
         pattern()
         self.attack_pattern_index += 1
         self.state = 'idle'
-        self.state_timer = 120 if self.phase < 3 else 60
+
+        timer = 120 if self.phase < 3 else 60
+        if self.game.challenge and self.game.challenge.name == "No Dash":
+             timer *= 0.8
+
+        self.state_timer = timer
 
     def stun(self, duration):
         self.stun_timer = duration
@@ -314,16 +325,34 @@ class Boss(pygame.sprite.Sprite):
     def teleport(self):
         self.sound_manager.play("teleport")
         valid = False
-        while not valid:
+        attempts = 0
+        candidates = []
+        while not valid and attempts < 20:
             new_x = random.randint(100, 900)
             new_y = random.randint(100, 500)
+            candidates.append(pygame.math.Vector2(new_x, new_y))
             if pygame.math.Vector2(new_x, new_y).distance_to(self.game.player.pos) > 200:
                 self.pos = pygame.math.Vector2(new_x, new_y)
                 valid = True
+            attempts += 1
+
+        if not valid:
+            # Fallback: Pick candidate furthest from player
+            best_pos = candidates[0]
+            max_dist = -1
+            for cand in candidates:
+                dist = cand.distance_to(self.game.player.pos)
+                if dist > max_dist:
+                    max_dist = dist
+                    best_pos = cand
+            self.pos = best_pos
 
     def take_damage(self, amount):
         if self.hp <= 0: return
-        
+        if self.shield_active:
+            self.game.effect_manager.add_damage_number(self.rect.center, "REFLECTED", color=CYAN, size=20)
+            return
+
         self.sound_manager.play("boss_hit")
         multiplier = 1
         is_weak = False
@@ -354,8 +383,15 @@ class Boss(pygame.sprite.Sprite):
             self.dialogue = ""
         if self.flash_timer > 0:
             self.flash_timer -= dt
+        if self.shield_timer > 0:
+            self.shield_timer -= dt
+            if self.shield_timer <= 0:
+                self.shield_active = False
 
     def draw(self, screen, camera_offset):
+        if self.shield_active:
+             pygame.draw.circle(screen, CYAN, (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y), 100, 5)
+
         draw_rect = self.rect.copy()
         draw_rect.x -= camera_offset.x
         draw_rect.y -= camera_offset.y

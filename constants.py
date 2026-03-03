@@ -48,6 +48,7 @@ CHARGE_TIME = 60 # 1 second for charge shot
 SHIELD_COOLDOWN = 300 # 5 seconds
 FOCUS_MAX_TIME = 180 # 3 seconds
 FOCUS_REGEN_RATE = 0.2 # 1s focus = 5s regen
+# Focus-Mode ist auf Taste 'F' gebunden, Dash bleibt auf LSHIFT
 
 # --- Boss ---
 BOSS_MAX_HP = 100
