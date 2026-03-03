@@ -135,7 +135,9 @@ class EXEraser(PlayerProjectile):
         # Create explosion
         self.game.particle_manager.spawn_hit(self.rect.center, color=PURPLE)
         # Damage boss if in range
-        if self.game.boss.rect.inflate(100, 100).colliderect(self.rect):
+        explosion_rect = pygame.Rect(0, 0, 200, 200)
+        explosion_rect.center = self.rect.center
+        if explosion_rect.colliderect(self.game.boss.rect):
              self.game.boss.take_damage(3) # Central damage
         super().kill()
 
@@ -169,26 +171,50 @@ class EXRuler(PlayerProjectile):
 
         super().update(dt)
 
+class ParryDamageProjectile(PlayerProjectile):
+    def __init__(self, game, x, y, vel_x, vel_y, damage):
+        super().__init__(game, x, y, vel_x, vel_y, damage, GOLD, (15, 15))
+        self.is_homing = True
+
+    def draw(self, screen, camera_offset):
+        # Distinct star shape for parry damage
+        points = []
+        center = (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y)
+        for i in range(10):
+            angle = math.radians(i * 36 + self.angle)
+            r = 10 if i % 2 == 0 else 4
+            points.append((center[0] + math.cos(angle) * r, center[1] + math.sin(angle) * r))
+        pygame.draw.polygon(screen, self.color, points)
+        pygame.draw.polygon(screen, WHITE, points, 1)
+
 class EXSuper(PlayerProjectile):
     def __init__(self, game, x, y, direction):
-        super().__init__(game, x, y, 0, 0, 1.5, YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
-        self.lifetime = 60
+        super().__init__(game, x, y, 0, 0, 0.3, YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
+        self.lifetime = 45
         self.rect.midleft = (0, y) if direction > 0 else (SCREEN_WIDTH, y)
         if direction < 0: self.rect.right = SCREEN_WIDTH
         else: self.rect.left = 0
+        self.total_damage_dealt = 0
 
     def update(self, dt=1.0):
         self.lifetime -= dt
         if self.lifetime <= 0:
             self.kill()
 
-        # Clear all boss bullets
-        for bullet in self.game.boss_bullets:
-            bullet.kill()
+        # Clear all boss bullets (Visual clear on spawn and every 10 frames)
+        if int(self.lifetime) % 10 == 0:
+            for bullet in self.game.boss_bullets:
+                bullet.kill()
 
         # Damage boss every frame
-        if self.game.boss.rect.colliderect(self.rect):
-            self.game.boss.take_damage(self.damage * dt)
+        if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < EX_SUPER_DAMAGE_CAP:
+            dmg = self.damage * dt
+            # Cap damage
+            if self.total_damage_dealt + dmg > EX_SUPER_DAMAGE_CAP:
+                dmg = EX_SUPER_DAMAGE_CAP - self.total_damage_dealt
+
+            self.game.boss.take_damage(dmg)
+            self.total_damage_dealt += dmg
 
     def draw(self, screen, camera_offset):
         # Draw huge laser

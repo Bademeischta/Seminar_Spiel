@@ -2,7 +2,7 @@ import pygame
 import random
 from constants import WHITE, BLACK
 
-def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True):
+def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True, alpha=255):
     try:
         font = pygame.font.SysFont("Arial", size, bold=True)
     except:
@@ -10,6 +10,8 @@ def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True):
 
     if shadow:
         shadow_surf = font.render(text, True, BLACK)
+        if alpha < 255:
+            shadow_surf.set_alpha(alpha)
         shadow_rect = shadow_surf.get_rect()
         if center:
             shadow_rect.center = (x + 2, y + 2)
@@ -18,6 +20,8 @@ def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True):
         screen.blit(shadow_surf, shadow_rect)
 
     surf = font.render(text, True, color)
+    if alpha < 255:
+        surf.set_alpha(alpha)
     rect = surf.get_rect()
     if center:
         rect.center = (x, y)

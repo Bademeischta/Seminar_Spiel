@@ -4,7 +4,9 @@ from constants import *
 from player import Player
 from boss import Boss
 from effects import ParticleManager, EffectManager
-from ui import HUD, Menu, GradeScreen, StatisticsScreen
+from ui import HUD, Menu, GradeScreen, StatisticsScreen, ChallengeSelectScreen, DemoAbilityPanel
+from challenge import ChallengeMode
+from demo import DemoMode
 from save_system import SaveSystem
 from utils import draw_text, SoundManager
 
@@ -27,6 +29,10 @@ class Game:
         self.state = "MENU"
         self.menu = Menu(self)
         self.statistics_screen = StatisticsScreen(self, self.save_system.data)
+        self.challenge_screen = ChallengeSelectScreen(self)
+        self.challenge = None
+        self.demo = None
+        self.demo_panel = DemoAbilityPanel(self)
 
         self.particle_manager = ParticleManager()
         self.effect_manager = EffectManager()
@@ -51,7 +57,7 @@ class Game:
 
         self.reset_game()
 
-    def reset_game(self):
+    def reset_game(self, challenge_name=None, is_demo=False):
         self.all_sprites.empty()
         self.platforms.empty()
         self.player_bullets.empty()
@@ -70,6 +76,18 @@ class Game:
 
         self.boss = Boss(self)
         self.all_sprites.add(self.boss)
+
+        self.action_log = []
+        if challenge_name:
+            self.challenge = ChallengeMode(self, challenge_name)
+        else:
+            self.challenge = None
+
+        if is_demo:
+            self.demo = DemoMode(self)
+            self.state = "DEMO"
+        else:
+            self.demo = None
 
         self.game_time = 0
         self.reality_break_timer = 0
@@ -92,23 +110,51 @@ class Game:
                 if action == "START GAME":
                     self.reset_game()
                     self.state = "PLAYING"
+                elif action == "CHALLENGE MODES":
+                    self.state = "CHALLENGE_SELECT"
+                elif action == "DEMO MODE":
+                    self.reset_game(challenge_name=None, is_demo=True)
                 elif action == "STATISTICS":
                     self.state = "STATISTICS"
                 elif action == "QUIT":
                     pygame.quit()
                     sys.exit()
 
+            elif self.state == "CHALLENGE_SELECT":
+                chal_action = self.challenge_screen.update([event])
+                if chal_action == "BACK":
+                    self.state = "MENU"
+                elif chal_action:
+                    self.reset_game(challenge_name=chal_action)
+                    self.state = "PLAYING"
+
             elif self.state == "STATISTICS":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.state = "MENU"
 
-            elif self.state == "PLAYING":
+            elif self.state in ["PLAYING", "DEMO"]:
+                if self.state == "DEMO":
+                    ability = self.demo_panel.update([event])
+                    if ability:
+                        self.handle_demo_ability(ability)
+
                 if event.type == pygame.KEYDOWN:
+                    if self.state == "DEMO":
+                        if event.key == pygame.K_TAB:
+                            self.demo.panel_visible = not self.demo.panel_visible
+                        if event.key == pygame.K_r:
+                            self.boss.hp = 100
+                            self.boss.phase = 1
+                            self.boss.state = 'idle'
+                        if event.key == pygame.K_b:
+                            self.player.pos = pygame.math.Vector2(100, SCREEN_HEIGHT)
+                        if event.key == pygame.K_ESCAPE:
+                            self.state = "MENU"
+
                     if event.key == pygame.K_SPACE:
                         # Parry check
-                        if not self.player.is_grounded:
-                            self.player.parry_active_timer = PARRY_WINDOW
-                            self.player.perfect_parry_window = PERFECT_PARRY_WINDOW
+                        self.player.parry_active_timer = PARRY_WINDOW
+                        self.player.perfect_parry_window = PERFECT_PARRY_WINDOW
                         self.player.jump()
 
                     if event.key == pygame.K_LSHIFT:
@@ -146,12 +192,26 @@ class Game:
         if self.effect_manager.freeze_timer > 0:
             dt = 0
 
-        if self.state == "PLAYING":
-            self.game_time += dt / 60
+        if self.state in ["PLAYING", "DEMO"]:
+            if self.state == "PLAYING":
+                self.game_time += dt / 60
+
+            if self.challenge:
+                self.challenge.update(dt)
+
+            if self.state == "DEMO":
+                self.demo.update(dt)
 
             # Update sprites
             self.player.update(dt)
-            self.boss.update(dt)
+            # In demo mode, boss logic is largely handled by demo.py and manual triggers
+            if self.state == "PLAYING":
+                self.boss.update(dt)
+            else:
+                # In Demo, only update boss visuals (flash, weakpoint etc)
+                self.boss.update_weak_point(dt)
+                self.boss.update_visuals(dt)
+                self.boss.rect.center = self.boss.pos + self.boss.vibrate_offset
             self.player_bullets.update(dt)
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
@@ -164,16 +224,25 @@ class Game:
                     self.inverted_controls = False
                     self.inverted_gravity = False
 
-            if self.boss.hp <= 0 and not self.boss.alive():
+            if self.boss.is_dying and self.boss.state_timer <= 0:
                 self.win_game()
 
     def win_game(self):
+        # Challenge Bonuses
+        style_bonus = 0
+        if self.challenge:
+            if self.challenge.name == "No Dash":
+                 # +20 Style pro Dodge? Simplified: +100 bonus style for win
+                 style_bonus = 100
+            elif self.challenge.name == "Parry Only":
+                 style_bonus = self.total_parries * 30
+
         stats = {
             'time': self.game_time,
             'hp': self.player.hp,
             'parries': self.total_parries,
             'perfect_parries': self.perfect_parries, 
-            'style': self.style_points + (self.player.cards * 10) # Base style + leftover cards
+            'style': self.style_points + (self.player.cards * 10) + style_bonus
         }
         self.grade_screen = GradeScreen(self, stats)
         self.state = "WIN_SCREEN"
@@ -183,6 +252,23 @@ class Game:
         self.save_system.update_stat("best_time", self.game_time, mode="min")
         self.save_system.update_stat("total_damage_dealt", BOSS_MAX_HP)
 
+        if self.challenge:
+             chal_key = f"best_grade_{self.challenge.name.replace(' ', '_')}"
+             # We need to compare grades. S+ > S > A ...
+             current_best = self.save_system.data["stats"].get(chal_key, "D")
+             grade_order = ["D", "C", "B", "A", "S", "S+"]
+             if grade_order.index(self.grade_screen.grade) > grade_order.index(current_best):
+                  self.save_system.update_stat(chal_key, self.grade_screen.grade, mode="set")
+
+             # Special unlocks
+             if self.challenge.name == "No Dash" and self.grade_screen.grade in ["S", "S+"]:
+                  if "Speedrunner" not in self.save_system.data["unlocks"]["skins"]:
+                       self.save_system.data["unlocks"]["skins"].append("Speedrunner")
+             if self.challenge.name == "One Hit KO":
+                  if "Perfektionist" not in self.save_system.data["unlocks"]["skins"]:
+                       self.save_system.data["unlocks"]["skins"].append("Perfektionist")
+             self.save_system.save()
+
     def game_over(self):
         self.state = "MENU" 
 
@@ -190,6 +276,11 @@ class Game:
         # Draw everything to render_surface
         self.render_surface.fill(BLACK)
         
+        if self.state == "CHALLENGE_SELECT":
+             self.challenge_screen.draw(self.screen)
+             pygame.display.flip()
+             return
+
         camera_offset = self.effect_manager.get_camera_offset()
 
         if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN"]:
@@ -235,8 +326,13 @@ class Game:
             self.screen.blit(self.render_surface, (0, 0))
 
         # UI is drawn ON TOP of zoomed game (no zoom for UI)
-        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN"]:
+        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
             self.hud.draw(self.screen)
+            if self.state == "DEMO" and self.demo.panel_visible:
+                 self.demo_panel.draw(self.screen)
+
+            if self.state == "DEMO":
+                 draw_text(self.screen, "⚡ DEMO MODE — ESC zum Beenden", 24, SCREEN_WIDTH//2, 30, RED)
 
         if self.state == "MENU":
             self.menu.draw(self.screen)
@@ -248,6 +344,79 @@ class Game:
             self.grade_screen.draw(self.screen)
 
         pygame.display.flip()
+
+    def handle_demo_ability(self, ability):
+        self.player.add_ability_label(ability.upper())
+
+        if ability == "Basis-Schuss":
+            self.player.shoot_basic()
+        elif ability == "Charge Shot":
+            self.player.shoot_charge()
+        elif ability == "Spread Shot":
+            self.player.shoot_spread()
+        elif ability == "Homing Shot":
+            self.player.shoot_homing()
+        elif ability == "EX-Flieger":
+            self.player.selected_ex = "Flieger"
+            self.player.cards = 5
+            self.player.shoot_ex()
+        elif ability == "EX-Eraser":
+            self.player.selected_ex = "Eraser"
+            self.player.cards = 5
+            self.player.shoot_ex()
+        elif ability == "EX-Ruler":
+            self.player.selected_ex = "Ruler"
+            self.player.cards = 5
+            self.player.shoot_ex()
+        elif ability == "Ultimate Laser":
+            self.player.cards = 5
+            # Force ultimate shoot regardless of selected_ex
+            bullet = EXSuper(self, self.player.rect.centerx, self.player.rect.centery, 1 if self.player.facing_right else -1)
+            self.all_sprites.add(bullet)
+            self.player_bullets.add(bullet)
+            self.effect_manager.apply_shake(60, 15)
+            self.effect_manager.apply_zoom(1.3, duration=30)
+        elif ability == "Dash (normal)":
+            self.player.dash()
+        elif ability == "Super-Dash":
+            # Force super dash bypass
+            self.player.cards = 1
+            self.player.is_super_dash = True
+            self.player.sound_manager.play("super_dash")
+            self.player.is_dashing = True
+            self.player.dash_timer = PLAYER_DASH_DURATION * 2
+            self.player.dash_cooldown_timer = PLAYER_DASH_COOLDOWN
+            self.player.i_frames = self.player.dash_timer
+            self.player.perfect_dash_window = 10
+            self.player.dash_direction = pygame.math.Vector2(1 if self.player.facing_right else -1, 0)
+            self.particle_manager.spawn_speed_lines()
+        elif ability == "Slam Down":
+            # Trigger slam by setting velocity
+            self.player.vel.y = PLAYER_DASH_SPEED * 1.5
+        elif ability == "Perfect Parry":
+            self.demo.spawn_parry_projectile()
+        elif ability == "Streber Mode":
+            self.player.parry_chain = 3
+            self.player.handle_parry(None) # Not ideal but might work or just set flag
+            self.player.streber_mode = True
+            self.player.parry_counter_timer = 600
+        elif ability == "Notizbuch-Schild":
+            self.player.activate_shield()
+        elif ability == "Boss: Phase 1":
+            self.boss.hp = 85
+            self.boss.phase = 1
+        elif ability == "Boss: Phase 2":
+            self.boss.hp = 50
+            self.boss.check_phase()
+        elif ability == "Boss: Phase 3":
+            self.boss.hp = 15
+            self.boss.check_phase()
+        elif ability == "Boss: Reality Break":
+            self.boss.reality_break()
+        elif ability == "Boss: Blackboard Barrage":
+            self.boss.blackboard_barrage()
+        elif ability == "Boss: Compass Hell":
+            self.boss.compass_hell_advanced()
 
     def run(self):
         while True:

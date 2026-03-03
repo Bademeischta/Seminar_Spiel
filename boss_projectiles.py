@@ -128,6 +128,7 @@ class EquationProjectile(BossProjectile):
 class ProtractorSpin(BossProjectile):
     def __init__(self, game, boss):
         super().__init__(game, boss.rect.centerx, boss.rect.centery, 0, 0, color=BLUE, size=(200, 200))
+        self.is_parryable = True
         self.boss = boss
         self.angle = 0
         self.timer = 600 # 10 seconds

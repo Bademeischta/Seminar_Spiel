@@ -57,6 +57,12 @@ class HUD:
         focus_fill = (self.game.player.focus_time / FOCUS_MAX_TIME) * 170
         pygame.draw.rect(screen, CYAN, (20, 115, focus_fill, 10))
 
+        # Challenge Info
+        if self.game.challenge:
+             draw_text(screen, f"CHALLENGE: {self.game.challenge.name}", 20, SCREEN_WIDTH - 150, 100, GOLD)
+             if self.game.challenge.name == "Parry Only":
+                  draw_text(screen, f"PARRY DAMAGE: {self.game.challenge.parry_damage_total}", 20, SCREEN_WIDTH - 150, 130, WHITE)
+
         # Boss HP
         boss = self.game.boss
         if boss and boss.alive():
@@ -154,7 +160,7 @@ class GradeScreen:
 class Menu:
     def __init__(self, game):
         self.game = game
-        self.options = ["START GAME", "CHALLENGE MODES", "STATISTICS", "QUIT"]
+        self.options = ["START GAME", "CHALLENGE MODES", "DEMO MODE", "STATISTICS", "QUIT"]
         self.selected = 0
 
     def draw(self, screen):
@@ -177,6 +183,89 @@ class Menu:
                     return self.options[self.selected]
         return None
 
+class DemoAbilityPanel:
+    def __init__(self, game):
+        self.game = game
+        self.width = 200
+        self.rect = pygame.Rect(SCREEN_WIDTH - self.width, 0, self.width, SCREEN_HEIGHT)
+        self.buttons = [
+            "Basis-Schuss", "Charge Shot", "Spread Shot", "Homing Shot",
+            "EX-Flieger", "EX-Eraser", "EX-Ruler", "Ultimate Laser",
+            "Dash (normal)", "Super-Dash", "Slam Down", "Perfect Parry",
+            "Streber Mode", "Notizbuch-Schild",
+            "Boss: Phase 1", "Boss: Phase 2", "Boss: Phase 3",
+            "Boss: Reality Break", "Boss: Blackboard Barrage", "Boss: Compass Hell"
+        ]
+        self.button_rects = []
+        for i, name in enumerate(self.buttons):
+             r = pygame.Rect(SCREEN_WIDTH - self.width + 10, 50 + i * 25, self.width - 20, 20)
+             self.button_rects.append(r)
+
+    def draw(self, screen):
+        # Semi-transparent background
+        surf = pygame.Surface((self.width, SCREEN_HEIGHT), pygame.SRCALPHA)
+        surf.fill((50, 50, 50, 180))
+        screen.blit(surf, (SCREEN_WIDTH - self.width, 0))
+
+        mouse_pos = pygame.mouse.get_pos()
+        for i, name in enumerate(self.buttons):
+            r = self.button_rects[i]
+            color = YELLOW if r.collidepoint(mouse_pos) else WHITE
+            pygame.draw.rect(screen, (30, 30, 30), r)
+            draw_text(screen, name, 14, r.centerx, r.centery, color)
+
+    def update(self, events):
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for i, r in enumerate(self.button_rects):
+                    if r.collidepoint(event.pos):
+                        return self.buttons[i]
+        return None
+
+class ChallengeSelectScreen:
+    def __init__(self, game):
+        self.game = game
+        self.challenges = [
+            {"name": "No Dash", "desc": "Kein Dash möglich. Boss ist schneller.", "diff": 3},
+            {"name": "One Hit KO", "desc": "Ein Treffer = Tod. Weniger Boss-HP.", "diff": 5},
+            {"name": "Parry Only", "desc": "Nur Parries machen Schaden.", "diff": 4},
+            {"name": "Boss Rush", "desc": "Direkt zu Phase 3.", "diff": 4},
+            {"name": "Mirror Match", "desc": "Boss kopiert deine Aktionen.", "diff": 5}
+        ]
+        self.selected = 0
+
+    def draw(self, screen):
+        screen.fill(BLACK)
+        draw_text(screen, "CHALLENGE MODES", 48, SCREEN_WIDTH//2, 80, YELLOW)
+
+        for i, chal in enumerate(self.challenges):
+            color = WHITE if i == self.selected else GRAY
+            y = 180 + i * 80
+
+            # Name & Stars
+            stars = "★" * chal["diff"] + "☆" * (5 - chal["diff"])
+            draw_text(screen, f"{chal['name']} {stars}", 32, SCREEN_WIDTH//2, y, color)
+            draw_text(screen, chal["desc"], 18, SCREEN_WIDTH//2, y + 30, color)
+
+            # Highscore
+            best = self.game.save_system.data["stats"].get(f"best_grade_{chal['name'].replace(' ', '_')}", "N/A")
+            draw_text(screen, f"Best: {best}", 18, SCREEN_WIDTH - 150, y, GOLD)
+
+        draw_text(screen, "W/S zum Wählen, ENTER zum Starten, ESC zum Zurück", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, GRAY)
+
+    def update(self, events):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_w or event.key == pygame.K_UP:
+                    self.selected = (self.selected - 1) % len(self.challenges)
+                elif event.key == pygame.K_s or event.key == pygame.K_DOWN:
+                    self.selected = (self.selected + 1) % len(self.challenges)
+                elif event.key == pygame.K_RETURN:
+                    return self.challenges[self.selected]["name"]
+                elif event.key == pygame.K_ESCAPE:
+                    return "BACK"
+        return None
+
 class StatisticsScreen:
     def __init__(self, game, save_data):
         self.save_data = save_data
@@ -186,9 +275,11 @@ class StatisticsScreen:
         draw_text(screen, "LIFETIME STATISTICS", 48, SCREEN_WIDTH//2, 80, CYAN)
 
         stats = self.save_data["stats"]
+        best_time = stats['best_time']
+        time_str = f"{int(best_time)}s" if best_time != float('inf') else "N/A"
         labels = [
             f"Gesamt-Siege: {stats['total_wins']}",
-            f"Beste Zeit: {stats['best_time'] if stats['best_time'] != float('inf') else 'N/A'}s",
+            f"Beste Zeit: {time_str}",
             f"Total Parries: {stats['total_parries']}",
             f"Höchste Parry-Chain: {stats['highest_parry_chain']}",
             f"Total Damage: {int(stats['total_damage_dealt'])}"
