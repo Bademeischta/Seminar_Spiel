@@ -275,9 +275,11 @@ class StatisticsScreen:
         draw_text(screen, "LIFETIME STATISTICS", 48, SCREEN_WIDTH//2, 80, CYAN)
 
         stats = self.save_data["stats"]
+        best_time = stats['best_time']
+        time_str = f"{int(best_time)}s" if best_time != float('inf') else "N/A"
         labels = [
             f"Gesamt-Siege: {stats['total_wins']}",
-            f"Beste Zeit: {stats['best_time'] if stats['best_time'] != float('inf') else 'N/A'}s",
+            f"Beste Zeit: {time_str}",
             f"Total Parries: {stats['total_parries']}",
             f"Höchste Parry-Chain: {stats['highest_parry_chain']}",
             f"Total Damage: {int(stats['total_damage_dealt'])}"

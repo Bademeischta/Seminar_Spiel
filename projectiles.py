@@ -185,9 +185,10 @@ class EXSuper(PlayerProjectile):
         if self.lifetime <= 0:
             self.kill()
 
-        # Clear all boss bullets
-        for bullet in self.game.boss_bullets:
-            bullet.kill()
+        # Clear all boss bullets (Visual clear on spawn and every 10 frames)
+        if int(self.lifetime) % 10 == 0:
+            for bullet in self.game.boss_bullets:
+                bullet.kill()
 
         # Damage boss every frame
         if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < 25:

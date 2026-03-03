@@ -113,7 +113,7 @@ class Game:
                 elif action == "CHALLENGE MODES":
                     self.state = "CHALLENGE_SELECT"
                 elif action == "DEMO MODE":
-                    self.reset_game(is_demo=True)
+                    self.reset_game(challenge_name=None, is_demo=True)
                 elif action == "STATISTICS":
                     self.state = "STATISTICS"
                 elif action == "QUIT":
@@ -250,14 +250,16 @@ class Game:
              # We need to compare grades. S+ > S > A ...
              current_best = self.save_system.data["stats"].get(chal_key, "D")
              grade_order = ["D", "C", "B", "A", "S", "S+"]
-             if grade_order.index(self.grade_screen.grade) >= grade_order.index(current_best):
+             if grade_order.index(self.grade_screen.grade) > grade_order.index(current_best):
                   self.save_system.update_stat(chal_key, self.grade_screen.grade, mode="set")
 
              # Special unlocks
              if self.challenge.name == "No Dash" and self.grade_screen.grade in ["S", "S+"]:
-                  self.save_system.data["unlocks"]["skins"].append("Speedrunner")
+                  if "Speedrunner" not in self.save_system.data["unlocks"]["skins"]:
+                       self.save_system.data["unlocks"]["skins"].append("Speedrunner")
              if self.challenge.name == "One Hit KO":
-                  self.save_system.data["unlocks"]["skins"].append("Perfektionist")
+                  if "Perfektionist" not in self.save_system.data["unlocks"]["skins"]:
+                       self.save_system.data["unlocks"]["skins"].append("Perfektionist")
              self.save_system.save()
 
     def game_over(self):

@@ -390,7 +390,10 @@ class Boss(pygame.sprite.Sprite):
 
     def draw(self, screen, camera_offset):
         if self.shield_active:
-             pygame.draw.circle(screen, CYAN, (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y), 100, 5)
+             # Pulsing effect for boss shield
+             pulse = math.sin(pygame.time.get_ticks() * 0.02) * 5
+             pygame.draw.circle(screen, CYAN, (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y), 100 + pulse, 3)
+             pygame.draw.circle(screen, WHITE, (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y), 90 + pulse, 1)
 
         draw_rect = self.rect.copy()
         draw_rect.x -= camera_offset.x

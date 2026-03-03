@@ -98,12 +98,10 @@ class Player(pygame.sprite.Sprite):
 
         # Focus Mode
         if keys[pygame.K_f] and not self.is_dashing and self.focus_time > 0:
+            self.is_focusing = True
             if self.game.effect_manager.slowmo_timer <= 0:
-                self.is_focusing = True
                 self.game.effect_manager.time_scale = 0.5
                 self.focus_time -= 1
-            else:
-                self.is_focusing = False
         else:
             self.is_focusing = False
             if self.focus_time < FOCUS_MAX_TIME:
@@ -163,6 +161,10 @@ class Player(pygame.sprite.Sprite):
         self.perform_jump()
 
     def perform_jump(self):
+        # Grounded check for Jump Buffer
+        if not self.is_grounded and not self.on_wall:
+            return
+
         # Wall Jump
         if self.on_wall:
             self.sound_manager.play("jump")

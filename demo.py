@@ -20,8 +20,10 @@ class DemoMode:
         self.game.player.cards = 5
 
         # Stop boss from attacking naturally
-        self.game.boss.state = 'idle'
-        self.game.boss.state_timer = 120 # keep it high
+        if self.game.boss.state != 'idle':
+            self.game.boss.state = 'idle'
+        if self.game.boss.state_timer < 60:
+            self.game.boss.state_timer = 120
 
     def spawn_parry_projectile(self):
         # Spawns a parryable projectile 150px in front of player, speed 4
