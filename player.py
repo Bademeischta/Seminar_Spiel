@@ -84,12 +84,17 @@ class Player(pygame.sprite.Sprite):
         self.drop_timer = 0
         self.ability_labels = []
 
+        self.coyote_timer = 0
+
     def handle_input(self, dt):
         if self.game.state == "DEMO":
-             return
-
-        keys = pygame.key.get_pressed()
-        mouse = pygame.mouse.get_pressed()
+             keys = self.game.demo.get_input(dt)
+             mouse = [False, False, False]
+             if keys[pygame.K_RETURN]:
+                  mouse[0] = True
+        else:
+             keys = pygame.key.get_pressed()
+             mouse = pygame.mouse.get_pressed()
 
         move_left = keys[pygame.K_a]
         move_right = keys[pygame.K_d]
@@ -112,6 +117,8 @@ class Player(pygame.sprite.Sprite):
 
         # Movement Acceleration
         if not self.is_dashing:
+            if keys[pygame.K_SPACE]:
+                 self.jump()
             self.acc = pygame.math.Vector2(0, 0)
             if move_left:
                 self.acc.x = -PLAYER_ACCELERATION * self.momentum_boost
@@ -126,6 +133,8 @@ class Player(pygame.sprite.Sprite):
                     self.vel.y -= 1080 * dt # 18 per frame approx
                     self.jump_timer -= dt
             else:
+                if self.vel.y < 0 and self.jump_timer > 0:
+                    self.vel.y *= 0.5 # Jump cut
                 self.jump_timer = 0
 
         # Shooting
@@ -156,7 +165,7 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_5]: self.selected_ex = "Homing"
 
     def jump(self):
-        if not self.is_grounded and not self.on_wall:
+        if not self.is_grounded and not self.on_wall and self.coyote_timer <= 0:
             self.jump_buffer = 0.15 # Input buffering for landing
             return
         self.perform_jump()
@@ -172,7 +181,7 @@ class Player(pygame.sprite.Sprite):
             self.spawn_jump_particles()
             return
 
-        if self.jump_count < self.max_jumps or self.is_grounded:
+        if self.jump_count < self.max_jumps or self.is_grounded or self.coyote_timer > 0:
             self.sound_manager.play("jump")
             
             force = PLAYER_JUMP_FORCE
@@ -190,6 +199,7 @@ class Player(pygame.sprite.Sprite):
             self.jump_timer = self.max_jump_time
             self.jump_count += 1
             self.is_grounded = False
+            self.coyote_timer = 0
             self.drop_timer = 0
             
             self.squash_factor = pygame.math.Vector2(0.8, 1.2)
@@ -397,6 +407,14 @@ class Player(pygame.sprite.Sprite):
 
             self.pos += self.vel * dt
 
+        # Level boundaries
+        if self.pos.x - self.width / 2 < 0:
+            self.pos.x = self.width / 2
+            self.vel.x = 0
+        elif self.pos.x + self.width / 2 > SCREEN_WIDTH:
+            self.pos.x = SCREEN_WIDTH - self.width / 2
+            self.vel.x = 0
+
         self.rect.midbottom = (int(self.pos.x), int(self.pos.y))
 
     def update_timers(self, dt):
@@ -430,6 +448,7 @@ class Player(pygame.sprite.Sprite):
         if self.shoot_timer > 0: self.shoot_timer -= dt
         if self.shield_cooldown > 0: self.shield_cooldown -= dt
         if self.wall_cling_timer > 0: self.wall_cling_timer -= dt
+        if self.coyote_timer > 0: self.coyote_timer -= dt
             
         if self.squash_timer > 0:
             self.squash_timer -= dt
@@ -462,6 +481,9 @@ class Player(pygame.sprite.Sprite):
         else:
             self.on_wall = None
 
+        was_grounded = self.is_grounded
+        self.is_grounded = False
+
         if self.game.inverted_gravity:
             if self.pos.y <= 0:
                 if not self.is_grounded:
@@ -490,6 +512,9 @@ class Player(pygame.sprite.Sprite):
                 self.can_air_dash = True
                 self.jump_count = 0
                 self.max_jumps = 2 if not self.streber_mode else 3
+
+        if was_grounded and not self.is_grounded:
+             self.coyote_timer = 0.15
 
         self.prev_on_wall = self.on_wall
 
