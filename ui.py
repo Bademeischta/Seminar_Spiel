@@ -9,29 +9,23 @@ class HUD:
 
     def draw(self, screen):
         # Player HP
-        for i in range(MAX_PLAYER_HP):
+        for i in range(PLAYER_MAX_HP):
             rect = pygame.Rect(20 + i * 40, 20, 30, 30)
             if i < self.game.player.hp:
-                pygame.draw.rect(screen, RED, rect)
+                pygame.draw.rect(screen, COLOR_RED, rect)
             else:
-                pygame.draw.rect(screen, DARK_GRAY, rect, 2)
+                pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, 2)
 
         # Special Meter (Cards)
-        for i in range(MAX_CARDS):
+        for i in range(PLAYER_MAX_CARDS):
             rect = pygame.Rect(20 + i * 35, 60, 30, 45)
-            # Fill level
             fill = 0
             if i < int(self.game.player.cards):
                 fill = 1.0
             elif i == int(self.game.player.cards):
                 fill = self.game.player.cards % 1.0
 
-            color = BLUE
-            if i < int(self.game.player.cards):
-                 # Golden card check (needs player state, simplified here to just blue or pulsing if full)
-                 pass
-            
-            # Draw empty slot
+            color = COLOR_BLUE
             pygame.draw.rect(screen, color, rect, 2)
             
             if fill > 0:
@@ -39,43 +33,39 @@ class HUD:
                 fill_rect.height = int(rect.height * fill)
                 fill_rect.bottom = rect.bottom
                 
-                # Golden fill if full ultimate or perfect parry bonus?
-                # For now just standard blue, but pulse white if full
-                draw_color = BLUE
+                draw_color = COLOR_BLUE
                 if self.game.player.cards >= 5:
                     pulse = (math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5 * 255
-                    draw_color = (100, 100, 255) # Light blue pulse
+                    draw_color = (100, 100, 255)
                 
                 pygame.draw.rect(screen, draw_color, fill_rect)
                 
                 if i < int(self.game.player.cards):
-                     pygame.draw.rect(screen, WHITE, rect.inflate(-10, -10), 1)
+                     pygame.draw.rect(screen, COLOR_WHITE, rect.inflate(-10, -10), 1)
 
         # Focus Meter
         focus_rect = pygame.Rect(20, 115, 170, 10)
-        pygame.draw.rect(screen, DARK_GRAY, focus_rect)
-        focus_fill = (self.game.player.focus_time / FOCUS_MAX_TIME) * 170
-        pygame.draw.rect(screen, CYAN, (20, 115, focus_fill, 10))
+        pygame.draw.rect(screen, COLOR_DARK_GRAY, focus_rect)
+        focus_fill = (self.game.player.focus_time / PLAYER_FOCUS_MAX_DURATION) * 170
+        pygame.draw.rect(screen, COLOR_CYAN, (20, 115, focus_fill, 10))
 
-        # Challenge Info
         if self.game.challenge:
-             draw_text(screen, f"CHALLENGE: {self.game.challenge.name}", 20, SCREEN_WIDTH - 150, 100, GOLD)
+             draw_text(screen, f"CHALLENGE: {self.game.challenge.name}", 20, SCREEN_WIDTH - 150, 100, COLOR_GOLD)
              if self.game.challenge.name == "Parry Only":
-                  draw_text(screen, f"PARRY DAMAGE: {self.game.challenge.parry_damage_total}", 20, SCREEN_WIDTH - 150, 130, WHITE)
+                  draw_text(screen, f"PARRY DAMAGE: {self.game.challenge.parry_damage_total}", 20, SCREEN_WIDTH - 150, 130, COLOR_WHITE)
 
-        # Boss HP
         boss = self.game.boss
         if boss and boss.alive():
             hp_width = 400
             hp_rect_bg = pygame.Rect(SCREEN_WIDTH // 2 - hp_width // 2, 20, hp_width, 25)
-            pygame.draw.rect(screen, DARK_GRAY, hp_rect_bg)
+            pygame.draw.rect(screen, COLOR_DARK_GRAY, hp_rect_bg)
 
             hp_fill = (boss.hp / boss.max_hp) * hp_width
             hp_rect_fill = pygame.Rect(SCREEN_WIDTH // 2 - hp_width // 2, 20, hp_fill, 25)
             pygame.draw.rect(screen, boss.color, hp_rect_fill)
-            pygame.draw.rect(screen, WHITE, hp_rect_bg, 2)
+            pygame.draw.rect(screen, COLOR_WHITE, hp_rect_bg, 2)
 
-            draw_text(screen, "Dr. Pythagoras", 20, SCREEN_WIDTH // 2, 60, WHITE)
+            draw_text(screen, "Dr. Pythagoras", 20, SCREEN_WIDTH // 2, 60, COLOR_WHITE)
 
 class GradeScreen:
     def __init__(self, game, stats):
@@ -84,7 +74,6 @@ class GradeScreen:
         self.grade, self.score = self.calculate_grade()
 
     def calculate_grade(self):
-        # Time (30%)
         time_score = 0
         t = self.stats['time']
         if t < 90: time_score = 100
@@ -93,16 +82,14 @@ class GradeScreen:
         elif t < 240: time_score = 50
         else: time_score = 30
 
-        # Damage (30%)
         dmg_score = 0
-        hits = MAX_PLAYER_HP - self.stats['hp']
+        hits = PLAYER_MAX_HP - self.stats['hp']
         if hits == 0: dmg_score = 100
         elif hits == 1: dmg_score = 80
         elif hits == 2: dmg_score = 60
         elif hits == 3: dmg_score = 40
         else: dmg_score = 20
 
-        # Parries (20%)
         p = self.stats['parries']
         parry_score = 0
         if p >= 15: parry_score = 100
@@ -111,19 +98,6 @@ class GradeScreen:
         elif p >= 1: parry_score = 40
         else: parry_score = 0
 
-        # Style (20%)
-        # Formula: (Total Style Events * 10) / Time
-        raw_style = (self.stats['style'] * 10) / (t if t > 0 else 1)
-        style_score = min(100, raw_style * 10) # Scaling factor needed? 
-        # Let's assume style events are ~10-20 per run. 20 * 10 / 100s = 2. Too low.
-        # Maybe raw points are just passed in?
-        # User doc says: "Gemessen an Multi-Parry, Perfect Dash etc."
-        # Let's assume stats['style'] is the count of events.
-        # If I have 20 events in 100s -> 200/100 = 2.
-        # Wait, formula says "(Total Style Events * 10) / Time".
-        # If I want a score of 100, I need 10 style points per second? Impossible.
-        # Maybe "Time" is in minutes? Or maybe it's "Style Points" directly.
-        # Let's just use the raw points accumulated in game as the score component.
         style_score = min(100, self.stats['style']) 
 
         total = (time_score * 0.3) + (dmg_score * 0.3) + (parry_score * 0.2) + (style_score * 0.2)
@@ -138,24 +112,24 @@ class GradeScreen:
         return grade, int(total)
 
     def draw(self, screen):
-        screen.fill(BLACK)
-        draw_text(screen, "KAMPF-STATISTIK", 48, SCREEN_WIDTH//2, 80, YELLOW)
+        screen.fill(COLOR_BLACK)
+        draw_text(screen, "KAMPF-STATISTIK", 48, SCREEN_WIDTH//2, 80, COLOR_YELLOW)
 
         y = 180
         stats_labels = [
             f"Zeit: {int(self.stats['time'])}s",
-            f"Schaden genommen: {MAX_PLAYER_HP - self.stats['hp']} Treffer",
+            f"Schaden genommen: {PLAYER_MAX_HP - self.stats['hp']} Treffer",
             f"Parries: {self.stats['parries']} ({self.stats['perfect_parries']} Perfect)",
             f"Style-Events: {int(self.stats['style'])}",
             f"SCORE: {self.score}"
         ]
 
         for label in stats_labels:
-            draw_text(screen, label, 30, SCREEN_WIDTH//2, y, WHITE)
+            draw_text(screen, label, 30, SCREEN_WIDTH//2, y, COLOR_WHITE)
             y += 50
 
-        draw_text(screen, f"GRADE: {self.grade}", 80, SCREEN_WIDTH//2, y + 50, GOLD if "S" in self.grade else WHITE)
-        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, GRAY)
+        draw_text(screen, f"GRADE: {self.grade}", 80, SCREEN_WIDTH//2, y + 50, COLOR_GOLD if "S" in self.grade else COLOR_WHITE)
+        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, COLOR_GRAY)
 
 class Menu:
     def __init__(self, game):
@@ -164,11 +138,11 @@ class Menu:
         self.selected = 0
 
     def draw(self, screen):
-        screen.fill(BLACK)
-        draw_text(screen, "DR. PYTHAGORAS 2.0", 64, SCREEN_WIDTH//2, 150, LIGHT_RED)
+        screen.fill(COLOR_BLACK)
+        draw_text(screen, "DR. PYTHAGORAS 2.0", 64, SCREEN_WIDTH//2, 150, COLOR_LIGHT_RED)
 
         for i, opt in enumerate(self.options):
-            color = WHITE if i == self.selected else GRAY
+            color = COLOR_WHITE if i == self.selected else COLOR_GRAY
             size = 40 if i == self.selected else 30
             draw_text(screen, opt, size, SCREEN_WIDTH//2, 300 + i * 60, color)
 
@@ -202,7 +176,6 @@ class DemoAbilityPanel:
              self.button_rects.append(r)
 
     def draw(self, screen):
-        # Semi-transparent background
         surf = pygame.Surface((self.width, SCREEN_HEIGHT), pygame.SRCALPHA)
         surf.fill((50, 50, 50, 180))
         screen.blit(surf, (SCREEN_WIDTH - self.width, 0))
@@ -210,7 +183,7 @@ class DemoAbilityPanel:
         mouse_pos = pygame.mouse.get_pos()
         for i, name in enumerate(self.buttons):
             r = self.button_rects[i]
-            color = YELLOW if r.collidepoint(mouse_pos) else WHITE
+            color = COLOR_YELLOW if r.collidepoint(mouse_pos) else COLOR_WHITE
             pygame.draw.rect(screen, (30, 30, 30), r)
             draw_text(screen, name, 14, r.centerx, r.centery, color)
 
@@ -235,23 +208,21 @@ class ChallengeSelectScreen:
         self.selected = 0
 
     def draw(self, screen):
-        screen.fill(BLACK)
-        draw_text(screen, "CHALLENGE MODES", 48, SCREEN_WIDTH//2, 80, YELLOW)
+        screen.fill(COLOR_BLACK)
+        draw_text(screen, "CHALLENGE MODES", 48, SCREEN_WIDTH//2, 80, COLOR_YELLOW)
 
         for i, chal in enumerate(self.challenges):
-            color = WHITE if i == self.selected else GRAY
+            color = COLOR_WHITE if i == self.selected else COLOR_GRAY
             y = 180 + i * 80
 
-            # Name & Stars
             stars = "★" * chal["diff"] + "☆" * (5 - chal["diff"])
             draw_text(screen, f"{chal['name']} {stars}", 32, SCREEN_WIDTH//2, y, color)
             draw_text(screen, chal["desc"], 18, SCREEN_WIDTH//2, y + 30, color)
 
-            # Highscore
             best = self.game.save_system.data["stats"].get(f"best_grade_{chal['name'].replace(' ', '_')}", "N/A")
-            draw_text(screen, f"Best: {best}", 18, SCREEN_WIDTH - 150, y, GOLD)
+            draw_text(screen, f"Best: {best}", 18, SCREEN_WIDTH - 150, y, COLOR_GOLD)
 
-        draw_text(screen, "W/S zum Wählen, ENTER zum Starten, ESC zum Zurück", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, GRAY)
+        draw_text(screen, "W/S zum Wählen, ENTER zum Starten, ESC zum Zurück", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, COLOR_GRAY)
 
     def update(self, events):
         for event in events:
@@ -271,8 +242,8 @@ class StatisticsScreen:
         self.save_data = save_data
 
     def draw(self, screen):
-        screen.fill(BLACK)
-        draw_text(screen, "LIFETIME STATISTICS", 48, SCREEN_WIDTH//2, 80, CYAN)
+        screen.fill(COLOR_BLACK)
+        draw_text(screen, "LIFETIME STATISTICS", 48, SCREEN_WIDTH//2, 80, COLOR_CYAN)
 
         stats = self.save_data["stats"]
         best_time = stats['best_time']
@@ -287,7 +258,37 @@ class StatisticsScreen:
 
         y = 180
         for label in labels:
-            draw_text(screen, label, 30, SCREEN_WIDTH//2, y, WHITE)
+            draw_text(screen, label, 30, SCREEN_WIDTH//2, y, COLOR_WHITE)
             y += 50
 
-        draw_text(screen, "Press ESC to return", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, GRAY)
+        draw_text(screen, "Press ESC to return", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, COLOR_GRAY)
+
+class UIManager:
+    def __init__(self, game):
+        self.game = game
+        self.hud = HUD(game)
+        self.menu = Menu(game)
+        self.statistics_screen = StatisticsScreen(game, game.save_system.data)
+        self.challenge_screen = ChallengeSelectScreen(game)
+        self.demo_panel = DemoAbilityPanel(game)
+
+    def draw(self, screen):
+        if self.game.state == "MENU":
+            self.menu.draw(screen)
+        elif self.game.state == "CHALLENGE_SELECT":
+            self.challenge_screen.draw(screen)
+        elif self.game.state == "STATISTICS":
+            self.statistics_screen.draw(screen)
+        elif self.game.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
+            self.hud.draw(screen)
+            if self.game.state == "DEMO" and self.game.demo.panel_visible:
+                self.demo_panel.draw(screen)
+
+            if self.game.state == "PAUSED":
+                draw_text(screen, "PAUSED", 64, SCREEN_WIDTH//2, SCREEN_HEIGHT//2, COLOR_WHITE)
+
+            if self.game.state == "DEMO":
+                draw_text(screen, "⚡ DEMO MODE — ESC zum Beenden", 24, SCREEN_WIDTH//2, 30, COLOR_RED)
+
+            if self.game.state == "WIN_SCREEN":
+                self.game.grade_screen.draw(screen)

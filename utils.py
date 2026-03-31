@@ -1,15 +1,24 @@
 import pygame
 import random
-from constants import WHITE, BLACK
+from constants import COLOR_WHITE, COLOR_BLACK
 
-def draw_text(screen, text, size, x, y, color=WHITE, shadow=True, center=True, alpha=255):
-    try:
-        font = pygame.font.SysFont("Arial", size, bold=True)
-    except:
-        font = pygame.font.Font(None, size)
+# Font Cache
+_font_cache = {}
+
+def get_font(name, size, bold=True):
+    key = (name, size, bold)
+    if key not in _font_cache:
+        try:
+            _font_cache[key] = pygame.font.SysFont(name, size, bold=bold)
+        except Exception:
+            _font_cache[key] = pygame.font.Font(None, size)
+    return _font_cache[key]
+
+def draw_text(screen, text, size, x, y, color=COLOR_WHITE, shadow=True, center=True, alpha=255):
+    font = get_font("Arial", size, bold=True)
 
     if shadow:
-        shadow_surf = font.render(text, True, BLACK)
+        shadow_surf = font.render(text, True, COLOR_BLACK)
         if alpha < 255:
             shadow_surf.set_alpha(alpha)
         shadow_rect = shadow_surf.get_rect()
@@ -48,13 +57,9 @@ class SoundManager:
             }
             self.current_layers = []
             self.initialized = True
-            print("SoundManager initialized (Placeholder Mode)")
 
     def play(self, name):
-        # Placeholder for real sound playing
-        # print(f"Playing sound: {name}")
         pass
 
     def update_music_layers(self, hp_percent):
-        # Logic to crossfade layers based on HP
         pass
