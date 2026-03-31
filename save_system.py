@@ -57,16 +57,19 @@ class SaveSystem:
             print(f"Error saving file: {e}")
 
     def update_stat(self, stat_name, value, mode="add"):
-        if stat_name in self.data["stats"]:
-            if mode == "add":
-                self.data["stats"][stat_name] += value
-            elif mode == "min":
-                self.data["stats"][stat_name] = min(self.data["stats"][stat_name], value)
-            elif mode == "max":
-                self.data["stats"][stat_name] = max(self.data["stats"][stat_name], value)
-            elif mode == "set":
-                self.data["stats"][stat_name] = value
-            self.save()
+        if stat_name not in self.data["stats"]:
+            # Key dynamisch erstellen mit sinnvollem Default
+            self.data["stats"][stat_name] = 0 if mode == "add" else value
+
+        if mode == "add":
+            self.data["stats"][stat_name] += value
+        elif mode == "min":
+            self.data["stats"][stat_name] = min(self.data["stats"][stat_name], value)
+        elif mode == "max":
+            self.data["stats"][stat_name] = max(self.data["stats"][stat_name], value)
+        elif mode == "set":
+            self.data["stats"][stat_name] = value
+        self.save()
 
     def unlock_skin(self, skin_name):
         if skin_name not in self.data["unlocks"]["skins"]:

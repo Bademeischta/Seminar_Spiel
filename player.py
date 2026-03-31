@@ -79,6 +79,7 @@ class Player(pygame.sprite.Sprite):
         self.can_dash = True
         self.jump_buffer = 0
         self.prev_on_wall = None
+        self.is_slam_down = False
 
         self.drop_timer = 0
         self.ability_labels = []
@@ -100,8 +101,11 @@ class Player(pygame.sprite.Sprite):
             self.is_focusing = True
             if self.game.effect_manager.slowmo_timer <= 0:
                 self.game.effect_manager.time_scale = 0.5
-                self.focus_time -= dt
+            self.focus_time -= dt
         else:
+            if self.is_focusing:
+                if self.game.effect_manager.slowmo_timer <= 0:
+                    self.game.effect_manager.time_scale = 1.0
             self.is_focusing = False
             if self.focus_time < PLAYER_FOCUS_MAX_DURATION:
                 self.focus_time += PLAYER_FOCUS_REGEN_RATE * dt
@@ -152,15 +156,12 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_5]: self.selected_ex = "Homing"
 
     def jump(self):
-        if self.is_grounded:
-            self.jump_buffer = 0.05 # ~3 frames
+        if not self.is_grounded and not self.on_wall:
+            self.jump_buffer = 0.15 # Input buffering for landing
             return
         self.perform_jump()
 
     def perform_jump(self):
-        if not self.is_grounded and not self.on_wall:
-            return
-
         if self.on_wall:
             self.sound_manager.play("jump")
             self.vel.y = PLAYER_JUMP_FORCE
@@ -231,9 +232,13 @@ class Player(pygame.sprite.Sprite):
                     dir_x = 1 if self.facing_right else -1
 
                 if dir_y == 1 and not self.is_grounded:
+                    self.is_slam_down = True
                     self.vel.y = PLAYER_DASH_SPEED * 1.5
                     self.dash_timer = 0.33
                     self.game.effect_manager.apply_shake(0.1, 5, type='directional', vector=(0, 1))
+                    return
+                else:
+                    self.is_slam_down = False
 
                 self.dash_direction = pygame.math.Vector2(dir_x, dir_y).normalize()
                 if dir_x != 0: self.facing_right = dir_x > 0
@@ -354,8 +359,9 @@ class Player(pygame.sprite.Sprite):
 
         if self.jump_buffer > 0:
             self.jump_buffer -= dt
-            if self.jump_buffer <= 0:
+            if (self.is_grounded or self.on_wall) and self.jump_buffer > 0:
                 self.perform_jump()
+                self.jump_buffer = 0
 
         self.apply_gravity(dt)
         self.update_physics(dt)
@@ -373,8 +379,9 @@ class Player(pygame.sprite.Sprite):
 
     def update_physics(self, dt):
         if self.is_dashing:
-            speed = PLAYER_DASH_SPEED * (2 if self.is_super_dash else 1)
-            self.vel = self.dash_direction * speed
+            if not getattr(self, 'is_slam_down', False):
+                speed = PLAYER_DASH_SPEED * (2 if self.is_super_dash else 1)
+                self.vel = self.dash_direction * speed
             self.pos += self.vel * dt
         else:
             friction_acc = self.vel.x * PLAYER_FRICTION
@@ -418,6 +425,8 @@ class Player(pygame.sprite.Sprite):
             self.parry_counter_timer -= dt
             if self.parry_counter_timer <= 0:
                 self.streber_mode = False
+        if not self.is_dashing:
+            self.is_slam_down = False
         if self.shoot_timer > 0: self.shoot_timer -= dt
         if self.shield_cooldown > 0: self.shield_cooldown -= dt
         if self.wall_cling_timer > 0: self.wall_cling_timer -= dt
@@ -507,8 +516,12 @@ class Player(pygame.sprite.Sprite):
 
         hits = pygame.sprite.spritecollide(self, self.game.boss_bullets, False)
         for projectile in hits:
+            # ProtractorSpin handhabt eigene Kollision in update()
+            if type(projectile).__name__ == 'ProtractorSpin':
+                continue
             if self.is_dashing:
                 if self.perfect_dash_window > 0:
+                    self.game.style_points += 5 # Perfect Dash Style
                     self.cards = min(self.cards + 0.5, PLAYER_MAX_CARDS)
                     self.game.effect_manager.add_damage_number(self.rect.center, "PERFECT DASH", color=COLOR_CYAN, size=16)
                     self.game.effect_manager.apply_slowmo(0.16, 0.8)
@@ -527,6 +540,8 @@ class Player(pygame.sprite.Sprite):
                 projectile.kill()
 
     def handle_parry(self, projectile):
+        if projectile is None:
+            return
         if not getattr(projectile, 'is_parryable', False):
             self.sound_manager.play("parry_fail")
             self.take_damage()
@@ -542,6 +557,7 @@ class Player(pygame.sprite.Sprite):
         self.game.particle_manager.spawn_parry(self.rect.center, perfect=is_perfect)
 
         if is_perfect:
+            self.game.style_points += 10 # Perfect Parry Style
             self.cards = min(self.cards + 2, PLAYER_MAX_CARDS)
             self.game.effect_manager.apply_slowmo(0.33, 0.3)
             self.game.effect_manager.apply_freeze(0.06)

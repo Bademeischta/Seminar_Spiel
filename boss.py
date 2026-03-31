@@ -65,6 +65,9 @@ class Boss(pygame.sprite.Sprite):
             if self.reality_break_warning_timer <= 0:
                 self.game.apply_reality_break(self.reality_break_pending_type)
                 self.reality_break_pending_type = None
+            # Visuals weiterführen, nur Logic-Updates überspringen
+            self.update_visuals(dt)
+            self.rect.center = self.pos + self.vibrate_offset
             return
 
         if self.stun_timer > 0:
@@ -301,6 +304,8 @@ class Boss(pygame.sprite.Sprite):
     def teleport_strike(self):
         target_pos = self.game.player.pos + pygame.math.Vector2(-50 if self.game.player.facing_right else 50, -20)
         self.pos = target_pos
+        # Update rect immediately, not just at the end of update()
+        self.rect.center = (int(self.pos.x), int(self.pos.y))
         hitbox = pygame.Rect(0, 0, 100, 100)
         hitbox.center = self.rect.center
         if hitbox.colliderect(self.game.player.rect):
