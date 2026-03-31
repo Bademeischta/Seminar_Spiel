@@ -351,12 +351,13 @@ class Boss(pygame.sprite.Sprite):
             self.pos = best_pos
 
     def take_damage(self, amount):
-        if self.hp <= 0: return
+        if self.hp <= 0 or self.flash_timer > 0: return # I-Frames
         if self.shield_active:
             self.game.effect_manager.add_damage_number(self.rect.center, "REFLECTED", color=CYAN, size=20)
             return
 
         self.sound_manager.play("boss_hit")
+        self.flash_timer = 10 # ~0.15s I-Frames & Flash
         multiplier = 1
         is_weak = False
         if self.weak_point_timer > 0:
@@ -366,7 +367,6 @@ class Boss(pygame.sprite.Sprite):
 
         actual_damage = amount * multiplier
         self.hp -= actual_damage
-        self.flash_timer = 5
         self.game.effect_manager.add_damage_number(self.rect.center, int(actual_damage), is_weak=is_weak)
         self.game.effect_manager.apply_shake(5, 3)
         

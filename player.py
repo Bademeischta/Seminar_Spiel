@@ -84,6 +84,9 @@ class Player(pygame.sprite.Sprite):
         self.ability_labels = [] # List of {text, timer}
 
     def handle_input(self):
+        if self.game.state == "DEMO":
+             return # Let the Bot handle it
+
         keys = pygame.key.get_pressed()
         mouse = pygame.mouse.get_pressed()
 
@@ -416,12 +419,28 @@ class Player(pygame.sprite.Sprite):
                     self.game.particle_manager.add(SquareParticle(self.rect.center, (0, 0), 12, WHITE, 6))
 
         else:
-            self.acc.x += self.vel.x * PLAYER_FRICTION
-            self.vel.x += self.acc.x * dt
+            # Apply Friction/Drag
+            # Friction is applied to the current velocity
+            friction_acc = self.vel.x * PLAYER_FRICTION
+
+            # Total horizontal acceleration
+            total_acc_x = self.acc.x + friction_acc
+
+            # Update velocity
+            self.vel.x += total_acc_x * dt
+
+            # Limit speed
             max_s = PLAYER_MAX_SPEED * self.momentum_boost
             if abs(self.vel.x) > max_s:
                 self.vel.x = max_s * (1 if self.vel.x > 0 else -1)
-            self.pos += (self.vel + 0.5 * self.acc * dt) * dt
+
+            # Threshold to stop completely
+            if abs(self.vel.x) < 0.1 and self.acc.x == 0:
+                self.vel.x = 0
+
+            # Update position (using semi-implicit Euler or similar)
+            self.pos.x += self.vel.x * dt
+            self.pos.y += self.vel.y * dt
 
         self.rect.midbottom = (int(self.pos.x), int(self.pos.y))
 
@@ -613,6 +632,8 @@ class Player(pygame.sprite.Sprite):
             self.game.effect_manager.add_damage_number(self.rect.center, "STREBER MODE!", color=GOLD, size=32)
 
     def take_damage(self):
+        if self.i_frames > 0: return # Already invincible
+
         self.sound_manager.play("hit")
         self.hp -= 1
 
@@ -620,7 +641,7 @@ class Player(pygame.sprite.Sprite):
              self.hp = 0
              self.i_frames = 0
         else:
-             self.i_frames = 60
+             self.i_frames = 90 # 1.5 seconds at 60fps
 
         self.game.effect_manager.apply_shake(20, 10)
         self.game.particle_manager.spawn_hit(self.rect.center, color=RED)

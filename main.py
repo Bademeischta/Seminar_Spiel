@@ -54,6 +54,7 @@ class Game:
         self.total_parries = 0
         self.perfect_parries = 0
         self.style_points = 0
+        self.inactivity_timer = 0
 
         self.reset_game()
 
@@ -104,6 +105,13 @@ class Game:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+
+            # Track inactivity for Demo Mode
+            if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
+                 self.inactivity_timer = 0
+                 # Exit Demo Mode on any key/click
+                 if self.state == "DEMO":
+                      self.state = "MENU"
 
             if self.state == "MENU":
                 action = self.menu.update([event])
@@ -192,6 +200,11 @@ class Game:
         if self.effect_manager.freeze_timer > 0:
             dt = 0
 
+        if self.state == "MENU":
+            self.inactivity_timer += dt
+            if self.inactivity_timer >= 15 * 60: # 15 seconds at 60fps
+                self.reset_game(is_demo=True)
+
         if self.state in ["PLAYING", "DEMO"]:
             if self.state == "PLAYING":
                 self.game_time += dt / 60
@@ -223,6 +236,15 @@ class Game:
                 if self.reality_break_timer <= 0:
                     self.inverted_controls = False
                     self.inverted_gravity = False
+
+            # Central Combat & Damage Logic
+            if self.player.alive() and self.boss.alive():
+                # Player projectiles vs Boss
+                hits = pygame.sprite.spritecollide(self.boss, self.player_bullets, True)
+                for bullet in hits:
+                    self.boss.take_damage(bullet.damage)
+                    # Spawn particles at impact point
+                    self.particle_manager.spawn_impact(bullet.rect.center, color=WHITE)
 
             if self.boss.is_dying and self.boss.state_timer <= 0:
                 self.win_game()
