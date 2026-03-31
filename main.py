@@ -3,6 +3,7 @@ import sys
 from constants import *
 from player import Player
 from boss import Boss
+from projectiles import EXSuper
 from effects import ParticleManager, EffectManager
 from ui import UIManager, GradeScreen
 from challenge import ChallengeMode
@@ -54,6 +55,7 @@ class Game:
         self.reset_game()
 
     def reset_game(self, challenge_name=None, is_demo=False):
+        self.inactivity_timer = 0
         self.all_sprites.empty()
         self.platforms.empty()
         self.player_bullets.empty()
@@ -159,9 +161,17 @@ class Game:
                             self.state = "MENU"
 
                     if event.key == pygame.K_SPACE:
-                        self.player.parry_active_timer = PLAYER_PARRY_WINDOW
-                        self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
-                        self.player.jump()
+                        keys_held = pygame.key.get_pressed()
+                        if self.player.is_grounded and (keys_held[pygame.K_s] or keys_held[pygame.K_DOWN]):
+                            # Duck + Parry on ground
+                            self.player.parry_active_timer = PLAYER_PARRY_WINDOW
+                            self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
+                        else:
+                            if not self.player.is_grounded:
+                                # Aerial Parry
+                                self.player.parry_active_timer = PLAYER_PARRY_WINDOW
+                                self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
+                            self.player.jump()
 
                     if event.key == pygame.K_LSHIFT:
                         self.player.dash()
@@ -237,11 +247,18 @@ class Game:
                 for bullet in hits:
                     self.boss.take_damage(bullet.damage)
                     self.particle_manager.spawn_impact(bullet.rect.center, color=COLOR_WHITE)
+                    # Style: Weak Point Treffer
+                    if self.boss.weak_point_timer > 0:
+                        self.style_points += 5
+                    # Style: Treffer während Streber Mode
+                    if self.player.streber_mode:
+                        self.style_points += 2
 
             if self.boss.is_dying and self.boss.state_timer <= 0:
                 self.win_game()
 
     def win_game(self):
+        self.inactivity_timer = 0
         style_bonus = 0
         if self.challenge:
             if self.challenge.name == "No Dash":
@@ -279,6 +296,7 @@ class Game:
              self.save_system.save()
 
     def game_over(self):
+        self.inactivity_timer = 0
         self.state = "MENU" 
 
     def draw(self):
@@ -376,9 +394,12 @@ class Game:
             self.demo.spawn_parry_projectile()
         elif ability == "Streber Mode":
             self.player.parry_chain = 3
-            self.player.handle_parry(None)
             self.player.streber_mode = True
             self.player.parry_counter_timer = 10.0
+            self.player.parry_chain_timer = 10.0
+            self.player.max_jumps = 3
+            self.effect_manager.add_damage_number(
+                self.player.rect.center, "STREBER MODE!", color=COLOR_GOLD, size=32)
         elif ability == "Notizbuch-Schild":
             self.player.activate_shield()
         elif ability == "Boss: Phase 1":

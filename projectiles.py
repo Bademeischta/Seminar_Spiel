@@ -70,7 +70,8 @@ class SpreadProjectile(PlayerProjectile):
 
 class HomingProjectile(PlayerProjectile):
     def __init__(self, game, x, y):
-        super().__init__(game, x, y, 600, 0, 2, COLOR_GREEN, (10, 10))
+        direction = 1 if game.player.facing_right else -1
+        super().__init__(game, x, y, 600 * direction, 0, 2, COLOR_GREEN, (10, 10))
         self.is_homing = True
         self.lifetime = 2.0
 
@@ -198,15 +199,24 @@ class EXSuper(PlayerProjectile):
             bullet.kill()
 
         if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < PLAYER_EX_SUPER_DAMAGE_CAP:
-            # damage is per frame in original, but here self.damage = 0.3
-            # In original it was dmg = self.damage * dt (where dt was 1.0 mostly)
-            # 0.3 damage per frame at 60fps = 18 damage per second.
-            dmg = 18 * dt
-            if self.total_damage_dealt + dmg > PLAYER_EX_SUPER_DAMAGE_CAP:
-                dmg = PLAYER_EX_SUPER_DAMAGE_CAP - self.total_damage_dealt
+            # Schaden direkt anwenden ohne flash_timer-Sperre
+            # Tick-Rate: 8x pro Sekunde (0.125s Cooldown)
+            self._tick_timer = getattr(self, '_tick_timer', 0) - dt
+            if self._tick_timer <= 0:
+                self._tick_timer = 0.125
+                dmg = 3.0  # 3 Schaden pro Tick * 8 Ticks/s = 24/s, Cap 25 in ~1s
+                if self.total_damage_dealt + dmg > PLAYER_EX_SUPER_DAMAGE_CAP:
+                    dmg = PLAYER_EX_SUPER_DAMAGE_CAP - self.total_damage_dealt
 
-            self.game.boss.take_damage(dmg)
-            self.total_damage_dealt += dmg
+                # hp direkt modifizieren, aber damage number + shake via take_damage-Logik
+                boss = self.game.boss
+                boss.hp -= dmg
+                boss.flash_timer = 0.05  # kurzes Flash für Feedback
+                self.total_damage_dealt += dmg
+                self.game.effect_manager.add_damage_number(
+                    boss.rect.center, int(dmg), is_weak=False)
+                if boss.hp < 0:
+                    boss.hp = 0
 
     def draw(self, screen, camera_offset):
         rect = self.rect.copy()

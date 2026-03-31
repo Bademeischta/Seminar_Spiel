@@ -102,8 +102,8 @@ class EquationProjectile(BossProjectile):
     def draw(self, screen, camera_offset):
         alpha = int(200 + math.sin(self.shimmer_time * 12) * 55)
         surf = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        # Use default font or something reliable
-        font = pygame.font.SysFont("Arial", 24, bold=True)
+        from utils import get_font
+        font = get_font("Arial", 24, bold=True)
         text_color = (*self.color, alpha) if len(self.color) == 3 else self.color
         text = font.render("∑" if not self.is_parryable else "π", True, text_color)
         rect = text.get_rect(center=(self.width//2, self.height//2))
@@ -181,7 +181,9 @@ class Laser(BossProjectile):
                 rect.y -= camera_offset.y
                 pygame.draw.rect(screen, self.color, rect)
             else:
-                start = self.pivot - camera_offset
+                # pivot ist ein Screen-Space-Punkt, kein World-Space-Punkt
+                # camera_offset NICHT abziehen
+                start = pygame.math.Vector2(self.pivot)
                 end = start + pygame.math.Vector2(SCREEN_WIDTH * 2, 0).rotate(self.angle)
                 pygame.draw.line(screen, self.color, start, end, 40)
 
@@ -206,7 +208,9 @@ class TextbookSlam(BossProjectile):
 
     def draw(self, screen, camera_offset):
         if self.state == 'warning':
-            pygame.draw.rect(screen, (255, 0, 0, 100), (self.target_x - 100 - camera_offset.x, SCREEN_HEIGHT - 20, 200, 20))
+            warn_surf = pygame.Surface((200, 20), pygame.SRCALPHA)
+            warn_surf.fill((255, 0, 0, 100))
+            screen.blit(warn_surf, (self.target_x - 100 - camera_offset.x, SCREEN_HEIGHT - 20))
         
         rect = self.rect.copy()
         rect.x -= camera_offset.x

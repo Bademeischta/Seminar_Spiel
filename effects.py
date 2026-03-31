@@ -183,6 +183,7 @@ class EffectManager:
         
         self.zoom_level = 1.0
         self.target_zoom = 1.0
+        self._zoom_speed = 6.0
         
         self.damage_numbers = []
 
@@ -199,8 +200,11 @@ class EffectManager:
     def apply_freeze(self, duration):
         self.freeze_timer = duration
 
-    def apply_zoom(self, zoom, duration=0):
+    def apply_zoom(self, zoom, duration=0.5):
         self.target_zoom = zoom
+        # Geschwindigkeit ableiten: bei duration=0.5s soll 90% der
+        # Strecke in duration zurückgelegt sein. lambda ≈ -ln(0.1)/duration
+        self._zoom_speed = 2.3 / max(duration, 0.05)
 
     def add_damage_number(self, pos, amount, is_weak=False, is_crit=False, color=None, size=None):
         if color is None:
@@ -234,7 +238,7 @@ class EffectManager:
                 self.time_scale = 1.0
 
         self.damage_numbers = [d for d in self.damage_numbers if d.update(dt)]
-        self.zoom_level += (self.target_zoom - self.zoom_level) * 6 * dt
+        self.zoom_level += (self.target_zoom - self.zoom_level) * self._zoom_speed * dt
 
     def get_camera_offset(self):
         offset = pygame.math.Vector2(0, 0)
