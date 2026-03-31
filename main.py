@@ -4,7 +4,7 @@ from constants import *
 from player import Player
 from boss import Boss
 from effects import ParticleManager, EffectManager
-from ui import HUD, Menu, GradeScreen, StatisticsScreen, ChallengeSelectScreen, DemoAbilityPanel
+from ui import UIManager, GradeScreen
 from challenge import ChallengeMode
 from demo import DemoMode
 from save_system import SaveSystem
@@ -14,30 +14,26 @@ class Platform(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height):
         super().__init__()
         self.image = pygame.Surface((width, height))
-        self.image.fill(GRAY)
+        self.image.fill(COLOR_GRAY)
         self.rect = self.image.get_rect(topleft=(x, y))
 
 class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        self.render_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)) # For Zoom
+        self.render_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Dr. Pythagoras 2.0 - Ultimate Boss Fight")
         self.clock = pygame.time.Clock()
         self.save_system = SaveSystem()
 
         self.state = "MENU"
-        self.menu = Menu(self)
-        self.statistics_screen = StatisticsScreen(self, self.save_system.data)
-        self.challenge_screen = ChallengeSelectScreen(self)
+        self.ui_manager = UIManager(self)
         self.challenge = None
         self.demo = None
-        self.demo_panel = DemoAbilityPanel(self)
 
         self.particle_manager = ParticleManager()
         self.effect_manager = EffectManager()
         self.sound_manager = SoundManager()
-        self.hud = HUD(self)
 
         self.all_sprites = pygame.sprite.Group()
         self.platforms = pygame.sprite.Group()
@@ -50,7 +46,6 @@ class Game:
         self.inverted_controls = False
         self.inverted_gravity = False
         
-        # Stats
         self.total_parries = 0
         self.perfect_parries = 0
         self.style_points = 0
@@ -99,6 +94,12 @@ class Game:
         self.perfect_parries = 0
         self.style_points = 0
 
+        self.effect_manager.time_scale = 1.0
+        self.effect_manager.slowmo_timer = 0
+        self.effect_manager.freeze_timer = 0
+        self.effect_manager.zoom_level = 1.0
+        self.effect_manager.target_zoom = 1.0
+
     def handle_events(self):
         events = pygame.event.get()
         for event in events:
@@ -106,15 +107,13 @@ class Game:
                 pygame.quit()
                 sys.exit()
 
-            # Track inactivity for Demo Mode
             if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
                  self.inactivity_timer = 0
-                 # Exit Demo Mode on any key/click
                  if self.state == "DEMO":
                       self.state = "MENU"
 
             if self.state == "MENU":
-                action = self.menu.update([event])
+                action = self.ui_manager.menu.update([event])
                 if action == "START GAME":
                     self.reset_game()
                     self.state = "PLAYING"
@@ -129,7 +128,7 @@ class Game:
                     sys.exit()
 
             elif self.state == "CHALLENGE_SELECT":
-                chal_action = self.challenge_screen.update([event])
+                chal_action = self.ui_manager.challenge_screen.update([event])
                 if chal_action == "BACK":
                     self.state = "MENU"
                 elif chal_action:
@@ -142,7 +141,7 @@ class Game:
 
             elif self.state in ["PLAYING", "DEMO"]:
                 if self.state == "DEMO":
-                    ability = self.demo_panel.update([event])
+                    ability = self.ui_manager.demo_panel.update([event])
                     if ability:
                         self.handle_demo_ability(ability)
 
@@ -160,16 +159,15 @@ class Game:
                             self.state = "MENU"
 
                     if event.key == pygame.K_SPACE:
-                        # Parry check
-                        self.player.parry_active_timer = PARRY_WINDOW
-                        self.player.perfect_parry_window = PERFECT_PARRY_WINDOW
+                        self.player.parry_active_timer = PLAYER_PARRY_WINDOW
+                        self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
                         self.player.jump()
 
                     if event.key == pygame.K_LSHIFT:
                         self.player.dash()
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 3: # Right click
+                    if event.button == 3:
                         self.player.shoot_ex()
 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
@@ -185,29 +183,30 @@ class Game:
 
     def apply_reality_break(self, effect_type):
         self.reality_break_type = effect_type
-        self.reality_break_timer = 120 # 2 seconds
+        self.reality_break_timer = 2.0
         self.sound_manager.play("reality_break")
         if effect_type == 'invert_controls':
              self.inverted_controls = True
-             self.effect_manager.apply_shake(10, 5)
+             self.effect_manager.apply_shake(0.16, 5)
         elif effect_type == 'invert_gravity':
              self.inverted_gravity = True
         elif effect_type == 'slow_mo':
-             self.effect_manager.apply_slowmo(120, 0.5)
+             self.effect_manager.apply_slowmo(2.0, 0.5)
 
     def update(self):
-        dt = self.effect_manager.time_scale
+        dt_raw = self.clock.tick(FPS) / 1000.0
+        dt = dt_raw * self.effect_manager.time_scale
         if self.effect_manager.freeze_timer > 0:
             dt = 0
 
         if self.state == "MENU":
-            self.inactivity_timer += dt
-            if self.inactivity_timer >= 15 * 60: # 15 seconds at 60fps
+            self.inactivity_timer += dt_raw
+            if self.inactivity_timer >= 15.0:
                 self.reset_game(is_demo=True)
 
         if self.state in ["PLAYING", "DEMO"]:
             if self.state == "PLAYING":
-                self.game_time += dt / 60
+                self.game_time += dt
 
             if self.challenge:
                 self.challenge.update(dt)
@@ -215,46 +214,37 @@ class Game:
             if self.state == "DEMO":
                 self.demo.update(dt)
 
-            # Update sprites
             self.player.update(dt)
-            # In demo mode, boss logic is largely handled by demo.py and manual triggers
             if self.state == "PLAYING":
                 self.boss.update(dt)
             else:
-                # In Demo, only update boss visuals (flash, weakpoint etc)
                 self.boss.update_weak_point(dt)
                 self.boss.update_visuals(dt)
                 self.boss.rect.center = self.boss.pos + self.boss.vibrate_offset
             self.player_bullets.update(dt)
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
-            self.effect_manager.update()
+            self.effect_manager.update(dt)
             
-            # Reality break cleanup
             if self.reality_break_timer > 0:
                 self.reality_break_timer -= dt
                 if self.reality_break_timer <= 0:
                     self.inverted_controls = False
                     self.inverted_gravity = False
 
-            # Central Combat & Damage Logic
             if self.player.alive() and self.boss.alive():
-                # Player projectiles vs Boss
                 hits = pygame.sprite.spritecollide(self.boss, self.player_bullets, True)
                 for bullet in hits:
                     self.boss.take_damage(bullet.damage)
-                    # Spawn particles at impact point
-                    self.particle_manager.spawn_impact(bullet.rect.center, color=WHITE)
+                    self.particle_manager.spawn_impact(bullet.rect.center, color=COLOR_WHITE)
 
             if self.boss.is_dying and self.boss.state_timer <= 0:
                 self.win_game()
 
     def win_game(self):
-        # Challenge Bonuses
         style_bonus = 0
         if self.challenge:
             if self.challenge.name == "No Dash":
-                 # +20 Style pro Dodge? Simplified: +100 bonus style for win
                  style_bonus = 100
             elif self.challenge.name == "Parry Only":
                  style_bonus = self.total_parries * 30
@@ -269,20 +259,17 @@ class Game:
         self.grade_screen = GradeScreen(self, stats)
         self.state = "WIN_SCREEN"
 
-        # Save stats
         self.save_system.update_stat("total_wins", 1)
         self.save_system.update_stat("best_time", self.game_time, mode="min")
         self.save_system.update_stat("total_damage_dealt", BOSS_MAX_HP)
 
         if self.challenge:
              chal_key = f"best_grade_{self.challenge.name.replace(' ', '_')}"
-             # We need to compare grades. S+ > S > A ...
              current_best = self.save_system.data["stats"].get(chal_key, "D")
              grade_order = ["D", "C", "B", "A", "S", "S+"]
              if grade_order.index(self.grade_screen.grade) > grade_order.index(current_best):
                   self.save_system.update_stat(chal_key, self.grade_screen.grade, mode="set")
 
-             # Special unlocks
              if self.challenge.name == "No Dash" and self.grade_screen.grade in ["S", "S+"]:
                   if "Speedrunner" not in self.save_system.data["unlocks"]["skins"]:
                        self.save_system.data["unlocks"]["skins"].append("Speedrunner")
@@ -295,19 +282,18 @@ class Game:
         self.state = "MENU" 
 
     def draw(self):
-        # Draw everything to render_surface
-        self.render_surface.fill(BLACK)
+        self.render_surface.fill(COLOR_BLACK)
         
         if self.state == "CHALLENGE_SELECT":
-             self.challenge_screen.draw(self.screen)
+             self.ui_manager.draw(self.screen)
              pygame.display.flip()
              return
 
         camera_offset = self.effect_manager.get_camera_offset()
 
-        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN"]:
+        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
             for plat in self.platforms:
-                pygame.draw.rect(self.render_surface, GRAY, plat.rect.move(-camera_offset.x, -camera_offset.y))
+                pygame.draw.rect(self.render_surface, COLOR_GRAY, plat.rect.move(-camera_offset.x, -camera_offset.y))
 
             self.player.draw(self.render_surface, camera_offset)
             self.boss.draw(self.render_surface, camera_offset)
@@ -317,54 +303,28 @@ class Game:
 
             self.particle_manager.draw(self.render_surface, camera_offset)
             self.effect_manager.draw(self.render_surface, camera_offset)
-
-            # Draw HUD directly to screen later? No, usually UI is not zoomed.
-            # But let's keep it consistent for now. Or better: Draw UI on screen, game on surface.
             
-            if self.state == "PAUSED":
-                draw_text(self.render_surface, "PAUSED", 64, SCREEN_WIDTH//2, SCREEN_HEIGHT//2, WHITE)
-
             if self.reality_break_timer > 0:
-                # Flash based on type
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-                color = (255, 0, 0, 50) # Invert controls
+                color = (255, 0, 0, 50)
                 if self.reality_break_type == 'invert_gravity': color = (0, 0, 255, 50)
                 if self.reality_break_type == 'slow_mo': color = (255, 255, 0, 50)
                 overlay.fill(color)
                 self.render_surface.blit(overlay, (0, 0))
-                draw_text(self.render_surface, f"REALITY BREAK: {self.reality_break_type.upper()}", 32, SCREEN_WIDTH//2, 150, WHITE)
+                draw_text(self.render_surface, f"REALITY BREAK: {self.reality_break_type.upper()}", 32, SCREEN_WIDTH//2, 150, COLOR_WHITE)
 
-        # Apply Zoom
         zoom = self.effect_manager.zoom_level
         if zoom != 1.0:
             w, h = int(SCREEN_WIDTH * zoom), int(SCREEN_HEIGHT * zoom)
             scaled = pygame.transform.scale(self.render_surface, (w, h))
-            # Center it
             x = (SCREEN_WIDTH - w) // 2
             y = (SCREEN_HEIGHT - h) // 2
-            self.screen.fill(BLACK) # Clear borders
+            self.screen.fill(COLOR_BLACK)
             self.screen.blit(scaled, (x, y))
         else:
             self.screen.blit(self.render_surface, (0, 0))
 
-        # UI is drawn ON TOP of zoomed game (no zoom for UI)
-        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
-            self.hud.draw(self.screen)
-            if self.state == "DEMO" and self.demo.panel_visible:
-                 self.demo_panel.draw(self.screen)
-
-            if self.state == "DEMO":
-                 draw_text(self.screen, "⚡ DEMO MODE — ESC zum Beenden", 24, SCREEN_WIDTH//2, 30, RED)
-
-        if self.state == "MENU":
-            self.menu.draw(self.screen)
-
-        if self.state == "STATISTICS":
-            self.statistics_screen.draw(self.screen)
-
-        if self.state == "WIN_SCREEN":
-            self.grade_screen.draw(self.screen)
-
+        self.ui_manager.draw(self.screen)
         pygame.display.flip()
 
     def handle_demo_ability(self, ability):
@@ -392,16 +352,14 @@ class Game:
             self.player.shoot_ex()
         elif ability == "Ultimate Laser":
             self.player.cards = 5
-            # Force ultimate shoot regardless of selected_ex
             bullet = EXSuper(self, self.player.rect.centerx, self.player.rect.centery, 1 if self.player.facing_right else -1)
             self.all_sprites.add(bullet)
             self.player_bullets.add(bullet)
-            self.effect_manager.apply_shake(60, 15)
-            self.effect_manager.apply_zoom(1.3, duration=30)
+            self.effect_manager.apply_shake(1.0, 15)
+            self.effect_manager.apply_zoom(1.3, duration=0.5)
         elif ability == "Dash (normal)":
             self.player.dash()
         elif ability == "Super-Dash":
-            # Force super dash bypass
             self.player.cards = 1
             self.player.is_super_dash = True
             self.player.sound_manager.play("super_dash")
@@ -409,19 +367,18 @@ class Game:
             self.player.dash_timer = PLAYER_DASH_DURATION * 2
             self.player.dash_cooldown_timer = PLAYER_DASH_COOLDOWN
             self.player.i_frames = self.player.dash_timer
-            self.player.perfect_dash_window = 10
+            self.player.perfect_dash_window = 0.16
             self.player.dash_direction = pygame.math.Vector2(1 if self.player.facing_right else -1, 0)
             self.particle_manager.spawn_speed_lines()
         elif ability == "Slam Down":
-            # Trigger slam by setting velocity
             self.player.vel.y = PLAYER_DASH_SPEED * 1.5
         elif ability == "Perfect Parry":
             self.demo.spawn_parry_projectile()
         elif ability == "Streber Mode":
             self.player.parry_chain = 3
-            self.player.handle_parry(None) # Not ideal but might work or just set flag
+            self.player.handle_parry(None)
             self.player.streber_mode = True
-            self.player.parry_counter_timer = 600
+            self.player.parry_counter_timer = 10.0
         elif ability == "Notizbuch-Schild":
             self.player.activate_shield()
         elif ability == "Boss: Phase 1":
@@ -445,7 +402,6 @@ class Game:
             self.handle_events()
             self.update()
             self.draw()
-            self.clock.tick(FPS)
 
 if __name__ == "__main__":
     game = Game()
