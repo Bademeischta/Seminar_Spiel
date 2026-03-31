@@ -7,7 +7,7 @@ from projectiles import EXSuper
 from effects import ParticleManager, EffectManager
 from ui import UIManager, GradeScreen
 from challenge import ChallengeMode
-from demo import DemoMode
+from demo import DemoBot
 from save_system import SaveSystem
 from utils import draw_text, SoundManager
 
@@ -82,7 +82,7 @@ class Game:
             self.challenge = None
 
         if is_demo:
-            self.demo = DemoMode(self)
+            self.demo = DemoBot(self)
             self.state = "DEMO"
         else:
             self.demo = None
@@ -110,9 +110,11 @@ class Game:
                 sys.exit()
 
             if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
-                 self.inactivity_timer = 0
                  if self.state == "DEMO":
+                      self.reset_game()
                       self.state = "MENU"
+                      continue
+                 self.inactivity_timer = 0
 
             if self.state == "MENU":
                 action = self.ui_manager.menu.update([event])
@@ -222,7 +224,9 @@ class Game:
                 self.challenge.update(dt)
 
             if self.state == "DEMO":
-                self.demo.update(dt)
+                # Bot handles infinite health/cards internally
+                self.player.hp = 999
+                self.player.cards = 5
 
             self.player.update(dt)
             if self.state == "PLAYING":
