@@ -1,69 +1,50 @@
 import pygame
 import random
 from constants import *
+from boss_projectiles import BossProjectile
 
-class DemoBot:
+class DemoMode:
     def __init__(self, game):
         self.game = game
-        self.timer = 0
-        self.direction = 1
-        self.jump_timer = 0
-        self.shoot_timer = 0
-        self.change_dir_timer = 0
+        self.panel_visible = True
+        self.bot_timer = 0
+        self.move_dir = 1
+        self.setup_demo()
 
-        # Simulated key state
-        self.keys = {
-            pygame.K_a: False,
-            pygame.K_d: False,
-            pygame.K_SPACE: False,
-            pygame.K_RETURN: False,
-            pygame.K_f: False,
-            pygame.K_e: False,
-            pygame.K_1: False,
-            pygame.K_2: False,
-            pygame.K_3: False,
-            pygame.K_4: False,
-            pygame.K_5: False,
-            pygame.K_LSHIFT: False,
-            pygame.K_LCTRL: False,
-            pygame.K_s: False,
-            pygame.K_DOWN: False,
-            pygame.K_p: False,
-            pygame.K_TAB: False,
-            pygame.K_r: False,
-            pygame.K_b: False,
-            pygame.K_ESCAPE: False
-        }
+    def setup_demo(self):
+        self.game.player.hp = 999
+        self.game.player.cards = 5
+        self.game.boss.state = 'idle'
 
-    def get_input(self, dt):
-        self.timer += dt
+    def update(self, dt):
+        self.game.player.hp = 999
+        self.game.player.cards = 5
 
-        # Reset per-frame keys
-        self.keys[pygame.K_SPACE] = False
-        self.keys[pygame.K_RETURN] = False
+        self.bot_timer += dt
 
-        # Randomly change direction every few seconds
-        self.change_dir_timer -= dt
-        if self.change_dir_timer <= 0:
-            self.direction = random.choice([-1, 1])
-            self.change_dir_timer = random.uniform(2.0, 5.0)
+        if int(self.bot_timer * 0.5) % 2 == 0:
+            if random.random() < 0.3 * dt:
+                self.move_dir *= -1
 
-        # Update movement keys
-        self.keys[pygame.K_a] = (self.direction == -1)
-        self.keys[pygame.K_d] = (self.direction == 1)
+        self.game.player.acc.x = self.move_dir * PLAYER_ACCELERATION
+        self.game.player.facing_right = self.move_dir > 0
 
-        # Occasional jumps
-        self.jump_timer -= dt
-        if self.jump_timer <= 0:
-            if random.random() < 0.4:
-                self.keys[pygame.K_SPACE] = True
-            self.jump_timer = random.uniform(0.5, 2.0)
+        if random.random() < 0.6 * dt:
+            self.game.player.jump()
 
-        # Occasional shooting
-        self.shoot_timer -= dt
-        if self.shoot_timer <= 0:
-            if random.random() < 0.6:
-                self.keys[pygame.K_RETURN] = True
-            self.shoot_timer = random.uniform(0.3, 1.0)
+        if random.random() < 1.2 * dt:
+            self.game.player.shoot_basic()
 
-        return self.keys
+        if self.game.boss.state != 'idle':
+            self.game.boss.state = 'idle'
+        if self.game.boss.state_timer < 1.0:
+            self.game.boss.state_timer = 2.0
+
+    def spawn_parry_projectile(self):
+        px, py = self.game.player.rect.center
+        offset = 150 if self.game.player.facing_right else -150
+        vel_x = -240 if self.game.player.facing_right else 240
+
+        p = BossProjectile(self.game, px + offset, py, vel_x, 0, is_parryable=True)
+        self.game.all_sprites.add(p)
+        self.game.boss_bullets.add(p)
