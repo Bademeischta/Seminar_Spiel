@@ -93,6 +93,18 @@ class SpeedLineParticle(Particle):
         pygame.draw.rect(surf, (*self.color, alpha), (0, 0, rect.width, rect.height))
         screen.blit(surf, rect)
 
+class ImpactParticle(Particle):
+    def draw(self, screen, camera_offset):
+        # Small white/yellow squares that fade
+        size = self.size * (self.lifetime / self.max_lifetime)
+        rect = pygame.Rect(0, 0, size, size)
+        rect.center = (self.pos.x - camera_offset.x, self.pos.y - camera_offset.y)
+
+        alpha = int((self.lifetime / self.max_lifetime) * 255)
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.rect(surf, (*self.color, alpha), (0, 0, size, size))
+        screen.blit(surf, rect)
+
 class ParticleManager:
     def __init__(self):
         self.particles = []
@@ -121,6 +133,11 @@ class ParticleManager:
         for _ in range(10):
             self.add(SquareParticle(pos, (random.uniform(-5, 5), random.uniform(-5, 5)),
                                     random.randint(20, 30), color, random.randint(3, 8), priority=2, gravity=0.2))
+
+    def spawn_impact(self, pos, color=WHITE):
+        for _ in range(8):
+            self.add(ImpactParticle(pos, (random.uniform(-4, 4), random.uniform(-4, 4)),
+                                    random.randint(15, 25), color, random.randint(2, 6), priority=2))
 
     def spawn_parry(self, pos, perfect=False):
         count = 30 if perfect else 15
