@@ -54,7 +54,7 @@ class Game:
 
         self.reset_game()
 
-    def reset_game(self, challenge_name=None, is_demo=False):
+    def reset_game(self, challenge_name=None, is_demo=False, is_demo_interactive=False):
         self.inactivity_timer = 0
         self.all_sprites.empty()
         self.platforms.empty()
@@ -81,8 +81,11 @@ class Game:
         else:
             self.challenge = None
 
-        if is_demo:
-            self.demo = DemoMode(self)
+        self.is_demo_bot = is_demo
+        self.is_demo_interactive = is_demo_interactive
+
+        if is_demo or is_demo_interactive:
+            self.demo = DemoMode(self, is_bot=is_demo)
             self.state = "DEMO"
         else:
             self.demo = None
@@ -111,7 +114,7 @@ class Game:
 
             if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN]:
                  self.inactivity_timer = 0
-                 if self.state == "DEMO":
+                 if self.state == "DEMO" and self.is_demo_bot:
                       self.state = "MENU"
 
             if self.state == "MENU":
@@ -122,7 +125,7 @@ class Game:
                 elif action == "CHALLENGE MODES":
                     self.state = "CHALLENGE_SELECT"
                 elif action == "DEMO MODE":
-                    self.reset_game(challenge_name=None, is_demo=True)
+                    self.reset_game(challenge_name=None, is_demo_interactive=True)
                 elif action == "STATISTICS":
                     self.state = "STATISTICS"
                 elif action == "QUIT":
@@ -162,23 +165,15 @@ class Game:
 
                     if event.key == pygame.K_SPACE:
                         keys_held = pygame.key.get_pressed()
-                        if self.player.is_grounded and (keys_held[pygame.K_s] or keys_held[pygame.K_DOWN]):
-                            # Duck + Parry on ground
+                        if keys_held[pygame.K_s] or keys_held[pygame.K_DOWN]:
+                            # Duck + Parry (Ground or Air)
                             self.player.parry_active_timer = PLAYER_PARRY_WINDOW
                             self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
                         else:
-                            if not self.player.is_grounded:
-                                # Aerial Parry
-                                self.player.parry_active_timer = PLAYER_PARRY_WINDOW
-                                self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
                             self.player.jump()
 
                     if event.key == pygame.K_LSHIFT:
                         self.player.dash()
-
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 3:
-                        self.player.shoot_ex()
 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
                      self.state = "PAUSED"
@@ -225,8 +220,10 @@ class Game:
                 self.demo.update(dt)
 
             self.player.update(dt)
-            if self.state == "PLAYING":
+            if self.state == "PLAYING" or (self.state == "DEMO" and self.demo.boss_active_timer > 0):
                 self.boss.update(dt)
+                if self.state == "DEMO" and self.demo.boss_active_timer > 0:
+                    self.demo.boss_active_timer -= dt
             else:
                 self.boss.update_weak_point(dt)
                 self.boss.update_visuals(dt)
@@ -346,7 +343,8 @@ class Game:
         pygame.display.flip()
 
     def handle_demo_ability(self, ability):
-        self.player.add_ability_label(ability.upper())
+        if not ability.startswith("Boss:"):
+            self.player.add_ability_label(ability.upper())
 
         if ability == "Basis-Schuss":
             self.player.shoot_basic()
@@ -413,10 +411,13 @@ class Game:
             self.boss.check_phase()
         elif ability == "Boss: Reality Break":
             self.boss.reality_break()
+            self.demo.boss_active_timer = 2.0
         elif ability == "Boss: Blackboard Barrage":
             self.boss.blackboard_barrage()
+            self.demo.boss_active_timer = 3.0
         elif ability == "Boss: Compass Hell":
             self.boss.compass_hell_advanced()
+            self.demo.boss_active_timer = 2.0
 
     def run(self):
         while True:

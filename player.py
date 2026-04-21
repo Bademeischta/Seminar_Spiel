@@ -3,6 +3,7 @@ import math
 import random
 from constants import *
 from projectiles import PlayerProjectile, EXFlieger, EXEraser, EXRuler, EXSuper, SpreadProjectile, HomingProjectile
+from boss_projectiles import ProtractorSpin
 from utils import SoundManager, draw_text
 from effects import AfterimageParticle, SquareParticle, StarParticle
 
@@ -83,9 +84,10 @@ class Player(pygame.sprite.Sprite):
 
         self.drop_timer = 0
         self.ability_labels = []
+        self.momentum_grace_timer = 0
 
     def handle_input(self, dt):
-        if self.game.state == "DEMO":
+        if self.game.state == "DEMO" and self.game.is_demo_bot:
              return
 
         keys = pygame.key.get_pressed()
@@ -138,6 +140,9 @@ class Player(pygame.sprite.Sprite):
                     self.shoot_charge()
                 else:
                     self.shoot_basic()
+                self.game.action_log.append("shoot")
+                if len(self.game.action_log) > 10:
+                    self.game.action_log.pop(0)
                 self.is_charging = False
                 self.charge_timer = 0
         
@@ -179,6 +184,9 @@ class Player(pygame.sprite.Sprite):
             if self.parry_boost_active:
                 force *= 1.5
                 self.parry_boost_active = False
+
+            if self.game.inverted_gravity:
+                force = -force
                 
             self.vel.y = force
             
@@ -202,15 +210,15 @@ class Player(pygame.sprite.Sprite):
             return
 
         if self.dash_cooldown_timer <= 0:
-            keys = pygame.key.get_pressed()
-            cost = 1 if (keys[pygame.K_LCTRL]) else 0
-            if cost == 1 and self.cards >= 1:
-                self.cards -= 1
-                self.is_super_dash = True
-            else:
-                self.is_super_dash = False
-
             if self.is_grounded or self.can_air_dash:
+                keys = pygame.key.get_pressed()
+                cost = 1 if (keys[pygame.K_LCTRL]) else 0
+                if cost == 1 and self.cards >= 1:
+                    self.cards -= 1
+                    self.is_super_dash = True
+                else:
+                    self.is_super_dash = False
+
                 self.sound_manager.play("super_dash" if self.is_super_dash else "dash")
                 self.is_dashing = True
                 self.dash_timer = PLAYER_DASH_DURATION * (2 if self.is_super_dash else 1)
@@ -245,6 +253,10 @@ class Player(pygame.sprite.Sprite):
                 
                 if self.is_super_dash:
                     self.game.particle_manager.spawn_speed_lines()
+
+                self.game.action_log.append("dash")
+                if len(self.game.action_log) > 10:
+                    self.game.action_log.pop(0)
 
     def activate_shield(self):
         self.shield_active = True
@@ -430,6 +442,7 @@ class Player(pygame.sprite.Sprite):
         if self.shoot_timer > 0: self.shoot_timer -= dt
         if self.shield_cooldown > 0: self.shield_cooldown -= dt
         if self.wall_cling_timer > 0: self.wall_cling_timer -= dt
+        if self.momentum_grace_timer > 0: self.momentum_grace_timer -= dt
             
         if self.squash_timer > 0:
             self.squash_timer -= dt
@@ -473,6 +486,8 @@ class Player(pygame.sprite.Sprite):
                 self.pos.y = 0
                 self.vel.y = 0
                 self.is_grounded = True
+                if self.momentum_grace_timer <= 0:
+                    self.momentum_boost = 1.0
                 self.can_air_dash = True
                 self.jump_count = 0
                 self.max_jumps = 2 if not self.streber_mode else 3
@@ -487,6 +502,8 @@ class Player(pygame.sprite.Sprite):
                 self.pos.y = SCREEN_HEIGHT
                 self.vel.y = 0
                 self.is_grounded = True
+                if self.momentum_grace_timer <= 0:
+                    self.momentum_boost = 1.0
                 self.can_air_dash = True
                 self.jump_count = 0
                 self.max_jumps = 2 if not self.streber_mode else 3
@@ -500,6 +517,8 @@ class Player(pygame.sprite.Sprite):
                     self.pos.y = platform.rect.top
                     self.vel.y = 0
                     self.is_grounded = True
+                    if self.momentum_grace_timer <= 0:
+                        self.momentum_boost = 1.0
                     self.can_air_dash = True
                     self.jump_count = 0
                     self.max_jumps = 2 if not self.streber_mode else 3
@@ -509,6 +528,8 @@ class Player(pygame.sprite.Sprite):
                     self.pos.y = platform.rect.bottom + self.height
                     self.vel.y = 0
                     self.is_grounded = True
+                    if self.momentum_grace_timer <= 0:
+                        self.momentum_boost = 1.0
                     self.can_air_dash = True
                     self.jump_count = 0
                     self.max_jumps = 2 if not self.streber_mode else 3
@@ -517,7 +538,7 @@ class Player(pygame.sprite.Sprite):
         hits = pygame.sprite.spritecollide(self, self.game.boss_bullets, False)
         for projectile in hits:
             # ProtractorSpin handhabt eigene Kollision in update()
-            if type(projectile).__name__ == 'ProtractorSpin':
+            if isinstance(projectile, ProtractorSpin):
                 continue
             if self.is_dashing:
                 if self.perfect_dash_window > 0:
@@ -568,6 +589,10 @@ class Player(pygame.sprite.Sprite):
             self.cards = min(self.cards + 1, PLAYER_MAX_CARDS)
             self.parry_boost_active = True
 
+        self.game.action_log.append("parry")
+        if len(self.game.action_log) > 10:
+            self.game.action_log.pop(0)
+
         self.game.total_parries += 1
         self.vel.y = -300
         self.can_air_dash = True
@@ -602,6 +627,7 @@ class Player(pygame.sprite.Sprite):
 
     def check_momentum_chain(self):
         self.momentum_boost = min(2.0, self.momentum_boost + 0.1)
+        self.momentum_grace_timer = 0.5
 
     def spawn_jump_particles(self):
         self.game.particle_manager.spawn_dust((self.rect.centerx, self.rect.bottom))

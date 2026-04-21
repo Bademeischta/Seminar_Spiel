@@ -36,7 +36,7 @@ class HUD:
                 draw_color = COLOR_BLUE
                 if self.game.player.cards >= 5:
                     pulse = (math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5 * 255
-                    draw_color = (100, 100, 255)
+                    draw_color = (100, min(255, 100 + int(pulse * 0.6)), 255)
                 
                 pygame.draw.rect(screen, draw_color, fill_rect)
                 
@@ -119,7 +119,7 @@ class GradeScreen:
         stats_labels = [
             f"Zeit: {int(self.stats['time'])}s",
             f"Schaden genommen: {PLAYER_MAX_HP - self.stats['hp']} Treffer",
-            f"Parries: {self.stats['parries']} ({self.stats['perfect_parries']} Perfect)",
+            f"Parries: {self.stats['parries']} ({self.stats.get('perfect_parries', 0)} Perfect)",
             f"Style-Events: {int(self.stats['style'])}",
             f"SCORE: {self.score}"
         ]
@@ -247,7 +247,7 @@ class StatisticsScreen:
 
         stats = self.save_data["stats"]
         best_time = stats['best_time']
-        time_str = f"{int(best_time)}s" if best_time != float('inf') else "N/A"
+        time_str = f"{int(best_time)}s" if best_time != -1 else "N/A"
         labels = [
             f"Gesamt-Siege: {stats['total_wins']}",
             f"Beste Zeit: {time_str}",

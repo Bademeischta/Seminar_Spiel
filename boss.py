@@ -154,7 +154,6 @@ class Boss(pygame.sprite.Sprite):
             self.pos.x = 850
         elif self.phase == 3:
             self.vibrate_offset = pygame.math.Vector2(random.randint(-3, 3), random.randint(-3, 3))
-            self.state_timer -= dt
             if self.state_timer <= 0 and self.state == 'idle':
                 self.teleport()
                 self.state_timer = 3.0
@@ -302,7 +301,7 @@ class Boss(pygame.sprite.Sprite):
         self.weak_point_timer = 3.0
 
     def teleport_strike(self):
-        target_pos = self.game.player.pos + pygame.math.Vector2(-50 if self.game.player.facing_right else 50, -20)
+        target_pos = self.game.player.pos + pygame.math.Vector2(50 if self.game.player.facing_right else -50, -20)
         self.pos = target_pos
         # Update rect immediately, not just at the end of update()
         self.rect.center = (int(self.pos.x), int(self.pos.y))
