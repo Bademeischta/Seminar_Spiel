@@ -11,7 +11,7 @@ class SaveSystem:
         return {
             "stats": {
                 "total_wins": 0,
-                "best_time": float('inf'),
+                "best_time": -1,
                 "highest_parry_chain": 0,
                 "total_parries": 0,
                 "total_damage_dealt": 0,
@@ -64,7 +64,10 @@ class SaveSystem:
         if mode == "add":
             self.data["stats"][stat_name] += value
         elif mode == "min":
-            self.data["stats"][stat_name] = min(self.data["stats"][stat_name], value)
+            if self.data["stats"][stat_name] == -1:
+                self.data["stats"][stat_name] = value
+            else:
+                self.data["stats"][stat_name] = min(self.data["stats"][stat_name], value)
         elif mode == "max":
             self.data["stats"][stat_name] = max(self.data["stats"][stat_name], value)
         elif mode == "set":

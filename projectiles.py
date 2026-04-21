@@ -82,7 +82,9 @@ class HomingProjectile(PlayerProjectile):
             if hasattr(target, 'weak_point_rect') and target.weak_point_rect:
                 target_pos = pygame.math.Vector2(target.weak_point_rect.center)
 
-            dir_vec = (target_pos - self.pos).normalize()
+            dir_vec = (target_pos - self.pos)
+            if dir_vec.length() > 0:
+                dir_vec = dir_vec.normalize()
             desired_vel = dir_vec * self.vel.length()
             self.vel += (desired_vel - self.vel) * 6 * dt # 0.1 per frame
 
@@ -185,6 +187,7 @@ class EXSuper(PlayerProjectile):
     def __init__(self, game, x, y, direction):
         super().__init__(game, x, y, 0, 0, 0.3, COLOR_YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
         self.lifetime = 0.75 # 45 / 60
+        self._tick_timer = 0
         self.rect.midleft = (0, y) if direction > 0 else (SCREEN_WIDTH, y)
         if direction < 0: self.rect.right = SCREEN_WIDTH
         else: self.rect.left = 0

@@ -3,6 +3,9 @@ import math
 import random
 from constants import *
 from projectiles import BaseProjectile
+from utils import get_font
+
+EQUATION_FONT = None
 
 class BossProjectile(BaseProjectile):
     def __init__(self, game, x, y, vel_x, vel_y, color=COLOR_RED, size=(20, 20), is_parryable=False):
@@ -100,12 +103,15 @@ class EquationProjectile(BossProjectile):
         if self.rect.top > SCREEN_HEIGHT: self.kill()
 
     def draw(self, screen, camera_offset):
+        global EQUATION_FONT
+        if EQUATION_FONT is None:
+            EQUATION_FONT = get_font("Arial", 24, bold=True)
+
         alpha = int(200 + math.sin(self.shimmer_time * 12) * 55)
         surf = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        from utils import get_font
-        font = get_font("Arial", 24, bold=True)
+
         text_color = (*self.color, alpha) if len(self.color) == 3 else self.color
-        text = font.render("∑" if not self.is_parryable else "π", True, text_color)
+        text = EQUATION_FONT.render("∑" if not self.is_parryable else "π", True, text_color)
         rect = text.get_rect(center=(self.width//2, self.height//2))
         surf.blit(text, rect)
         
@@ -181,9 +187,7 @@ class Laser(BossProjectile):
                 rect.y -= camera_offset.y
                 pygame.draw.rect(screen, self.color, rect)
             else:
-                # pivot ist ein Screen-Space-Punkt, kein World-Space-Punkt
-                # camera_offset NICHT abziehen
-                start = pygame.math.Vector2(self.pivot)
+                start = self.pivot - camera_offset
                 end = start + pygame.math.Vector2(SCREEN_WIDTH * 2, 0).rotate(self.angle)
                 pygame.draw.line(screen, self.color, start, end, 40)
 
