@@ -386,7 +386,8 @@ class Player(pygame.sprite.Sprite):
             keys = pygame.key.get_pressed()
             g = PHYSICS_GRAVITY
             if self.game.inverted_gravity: g = -PHYSICS_GRAVITY
-            current_gravity = g * 0.5 if (keys[pygame.K_SPACE] and self.vel.y < 0) else g
+            rising = self.vel.y > 0 if self.game.inverted_gravity else self.vel.y < 0
+            current_gravity = g * 0.5 if (keys[pygame.K_SPACE] and rising) else g
             self.vel.y += current_gravity * dt
 
     def update_physics(self, dt):
@@ -565,6 +566,7 @@ class Player(pygame.sprite.Sprite):
             return
         if not getattr(projectile, 'is_parryable', False):
             self.sound_manager.play("parry_fail")
+            self.game.effect_manager.add_damage_number(self.rect.center, "KEIN PARRY!", color=COLOR_ORANGE, size=18)
             self.take_damage()
             projectile.kill()
             return

@@ -332,7 +332,8 @@ class Game:
 
         self.save_system.update_stat("total_wins", 1)
         self.save_system.update_stat("best_time", self.game_time, mode="min")
-        self.save_system.update_stat("total_damage_dealt", BOSS_MAX_HP)
+        actual_damage = self.boss.max_hp - max(0, self.boss.hp)
+        self.save_system.update_stat("total_damage_dealt", actual_damage)
 
         if self.challenge:
              chal_key = f"best_grade_{self.challenge.name.replace(' ', '_')}"
@@ -384,7 +385,9 @@ class Game:
                 if self.reality_break_type == 'slow_mo': color = (255, 255, 0, 50)
                 overlay.fill(color)
                 self.render_surface.blit(overlay, (0, 0))
-                draw_text(self.render_surface, f"REALITY BREAK: {self.reality_break_type.upper()}", 32, SCREEN_WIDTH//2, 150, COLOR_WHITE)
+                _rb_labels = {'invert_controls': 'STEUERUNG INVERTIERT!', 'invert_gravity': 'SCHWERKRAFT UMGEKEHRT!', 'slow_mo': 'ZEITLUPE!'}
+                rb_text = _rb_labels.get(self.reality_break_type, self.reality_break_type.upper())
+                draw_text(self.render_surface, f"REALITY BREAK: {rb_text}", 32, SCREEN_WIDTH//2, 150, COLOR_WHITE)
 
         zoom = self.effect_manager.zoom_level
         if zoom != 1.0:

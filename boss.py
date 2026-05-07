@@ -75,8 +75,10 @@ class Boss(pygame.sprite.Sprite):
         if self.stun_timer > 0:
             prev_stun = self.stun_timer
             self.stun_timer -= dt
-            # Trigger every 0.33s
-            if int(prev_stun * 3) != int(self.stun_timer * 3):
+            if self.stun_timer <= 0:
+                self.state = 'idle'
+                self.state_timer = 1.0
+            elif int(prev_stun * 3) != int(self.stun_timer * 3):
                 self.game.effect_manager.add_damage_number(self.rect.midtop, "STUNNED!", color=COLOR_YELLOW, size=20)
             return
 
@@ -156,13 +158,12 @@ class Boss(pygame.sprite.Sprite):
             self.pos.x = 850
         elif self.phase == 3:
             self.vibrate_offset = pygame.math.Vector2(random.randint(-3, 3), random.randint(-3, 3))
-            if self.state_timer <= 0 and self.state == 'idle':
-                self.teleport()
-                self.state_timer = 3.0
 
         if self.state == 'idle':
             self.state_timer -= dt
             if self.state_timer <= 0:
+                if self.phase == 3:
+                    self.teleport()
                 self.run_attack()
 
     def run_attack(self):
@@ -295,7 +296,8 @@ class Boss(pygame.sprite.Sprite):
         self.reality_break_pending_type = effect
         self.reality_break_warning_timer = 1.0
         self.game.effect_manager.apply_shake(1.0, 2, type='rumble')
-        self.dialogue = f"REALITY BREAK: {effect.upper()}!"
+        _labels = {'invert_controls': 'STEUERUNG INVERTIERT', 'invert_gravity': 'SCHWERKRAFT UMGEKEHRT', 'slow_mo': 'ZEITLUPE'}
+        self.dialogue = f"REALITY BREAK: {_labels.get(effect, effect.upper())}!"
         self.dialogue_timer = 1.0
 
     def blackboard_barrage(self):
