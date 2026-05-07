@@ -187,7 +187,7 @@ class EXSuper(PlayerProjectile):
     def __init__(self, game, x, y, direction):
         super().__init__(game, x, y, 0, 0, 0.3, COLOR_YELLOW, (SCREEN_WIDTH, 60), is_ex=True)
         self.lifetime = 0.75 # 45 / 60
-        self._tick_timer = 0
+        self._tick_timer = 0.125  # start at full interval so first tick waits properly
         self.rect.midleft = (0, y) if direction > 0 else (SCREEN_WIDTH, y)
         if direction < 0: self.rect.right = SCREEN_WIDTH
         else: self.rect.left = 0
@@ -204,7 +204,7 @@ class EXSuper(PlayerProjectile):
         if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < PLAYER_EX_SUPER_DAMAGE_CAP:
             # Schaden direkt anwenden ohne flash_timer-Sperre
             # Tick-Rate: 8x pro Sekunde (0.125s Cooldown)
-            self._tick_timer = getattr(self, '_tick_timer', 0) - dt
+            self._tick_timer -= dt
             if self._tick_timer <= 0:
                 self._tick_timer = 0.125
                 dmg = 3.0  # 3 Schaden pro Tick * 8 Ticks/s = 24/s, Cap 25 in ~1s
