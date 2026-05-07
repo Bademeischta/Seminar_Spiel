@@ -8,6 +8,7 @@ from effects import ParticleManager, EffectManager
 from ui import UIManager, GradeScreen
 from challenge import ChallengeMode
 from demo import DemoMode
+from tutorial import TutorialManager
 from save_system import SaveSystem
 from utils import draw_text, SoundManager
 
@@ -31,6 +32,8 @@ class Game:
         self.ui_manager = UIManager(self)
         self.challenge = None
         self.demo = None
+        self.tutorial_manager = None
+        self.game_over_timer = 0.0
 
         self.particle_manager = ParticleManager()
         self.effect_manager = EffectManager()
@@ -81,6 +84,7 @@ class Game:
         else:
             self.challenge = None
 
+        self.tutorial_damage_dealt = 0
         self.is_demo_bot = is_demo
         self.is_demo_interactive = is_demo_interactive
 
@@ -89,6 +93,7 @@ class Game:
             self.state = "DEMO"
         else:
             self.demo = None
+        self.tutorial_manager = None
 
         self.game_time = 0
         self.reality_break_timer = 0
@@ -119,7 +124,11 @@ class Game:
 
             if self.state == "MENU":
                 action = self.ui_manager.menu.update([event])
-                if action == "START GAME":
+                if action == "TUTORIAL":
+                    self.reset_game()
+                    self.tutorial_manager = TutorialManager(self)
+                    self.state = "TUTORIAL"
+                elif action == "START GAME":
                     self.reset_game()
                     self.state = "PLAYING"
                 elif action == "CHALLENGE MODES":
@@ -143,6 +152,31 @@ class Game:
             elif self.state == "STATISTICS":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.state = "MENU"
+
+            elif self.state == "GAME_OVER":
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    self.state = "MENU"
+
+            elif self.state == "TUTORIAL":
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if self.tutorial_manager and not self.tutorial_manager.done:
+                            self.tutorial_manager.skip_step()
+                    if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        if self.tutorial_manager:
+                            self.tutorial_manager.finish()
+                            if self.tutorial_manager.done:
+                                self.state = "MENU"
+                    if event.key == pygame.K_LSHIFT:
+                        self.player.dash()
+
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    keys_held = pygame.key.get_pressed()
+                    if keys_held[pygame.K_s] or keys_held[pygame.K_DOWN]:
+                        self.player.parry_active_timer = PLAYER_PARRY_WINDOW
+                        self.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
+                    else:
+                        self.player.jump()
 
             elif self.state in ["PLAYING", "DEMO"]:
                 if self.state == "DEMO":
@@ -208,6 +242,29 @@ class Game:
             self.inactivity_timer += dt_raw
             if self.inactivity_timer >= 15.0:
                 self.reset_game(is_demo=True)
+
+        if self.state == "GAME_OVER":
+            self.game_over_timer -= dt_raw
+            if self.game_over_timer <= 0:
+                self.state = "MENU"
+
+        if self.state == "TUTORIAL":
+            if self.tutorial_manager:
+                self.tutorial_manager.update(dt)
+                if self.tutorial_manager.done:
+                    self.state = "MENU"
+            self.player.update(dt)
+            self.boss.update(dt)
+            self.player_bullets.update(dt)
+            self.boss_bullets.update(dt)
+            self.particle_manager.update(dt)
+            self.effect_manager.update(dt)
+            # Track damage dealt to boss during tutorial
+            if self.player.alive() and self.boss.alive():
+                hits = pygame.sprite.spritecollide(self.boss, self.player_bullets, True)
+                for bullet in hits:
+                    self.tutorial_damage_dealt += bullet.damage
+                    self.particle_manager.spawn_impact(bullet.rect.center, color=COLOR_WHITE)
 
         if self.state in ["PLAYING", "DEMO"]:
             if self.state == "PLAYING":
@@ -294,7 +351,8 @@ class Game:
 
     def game_over(self):
         self.inactivity_timer = 0
-        self.state = "MENU" 
+        self.game_over_timer = 4.0
+        self.state = "GAME_OVER"
 
     def draw(self):
         self.render_surface.fill(COLOR_BLACK)
@@ -306,7 +364,7 @@ class Game:
 
         camera_offset = self.effect_manager.get_camera_offset()
 
-        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
+        if self.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO", "TUTORIAL"]:
             for plat in self.platforms:
                 pygame.draw.rect(self.render_surface, COLOR_GRAY, plat.rect.move(-camera_offset.x, -camera_offset.y))
 

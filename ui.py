@@ -134,7 +134,7 @@ class GradeScreen:
 class Menu:
     def __init__(self, game):
         self.game = game
-        self.options = ["START GAME", "CHALLENGE MODES", "DEMO MODE", "STATISTICS", "QUIT"]
+        self.options = ["TUTORIAL", "START GAME", "CHALLENGE MODES", "DEMO MODE", "STATISTICS", "QUIT"]
         self.selected = 0
 
     def draw(self, screen):
@@ -272,6 +272,17 @@ class UIManager:
         self.challenge_screen = ChallengeSelectScreen(game)
         self.demo_panel = DemoAbilityPanel(game)
 
+    def draw_game_over(self, screen):
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+        draw_text(screen, "GAME OVER", 80, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60, COLOR_RED)
+        draw_text(screen, "Dr. Pythagoras hat gewonnen... diesmal.", 28,
+                  SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20, COLOR_GRAY)
+        remaining = max(0, self.game.game_over_timer)
+        draw_text(screen, f"Zurück zum Menü in {int(remaining) + 1}s  (SPACE / ENTER zum Überspringen)",
+                  20, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 70, COLOR_WHITE)
+
     def draw(self, screen):
         if self.game.state == "MENU":
             self.menu.draw(screen)
@@ -279,16 +290,38 @@ class UIManager:
             self.challenge_screen.draw(screen)
         elif self.game.state == "STATISTICS":
             self.statistics_screen.draw(screen)
-        elif self.game.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO"]:
+        elif self.game.state == "GAME_OVER":
+            self.draw_game_over(screen)
+        elif self.game.state in ["PLAYING", "PAUSED", "WIN_SCREEN", "DEMO", "TUTORIAL"]:
             self.hud.draw(screen)
             if self.game.state == "DEMO" and self.game.demo.panel_visible:
                 self.demo_panel.draw(screen)
 
             if self.game.state == "PAUSED":
-                draw_text(screen, "PAUSED", 64, SCREEN_WIDTH//2, SCREEN_HEIGHT//2, COLOR_WHITE)
+                overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 140))
+                screen.blit(overlay, (0, 0))
+                draw_text(screen, "PAUSE", 64, SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80, COLOR_WHITE)
+                controls = [
+                    "A / D  –  Bewegen",
+                    "SPACE  –  Springen  |  S + SPACE  –  Parry",
+                    "LSHIFT  –  Dash",
+                    "Linksklick  –  Schießen  |  Rechtsklick  –  EX-Angriff",
+                    "E  –  Schild  |  F  –  Focus-Modus",
+                    "1-5  –  EX-Typ wählen",
+                    "",
+                    "P  –  Weiterspielen",
+                ]
+                y = SCREEN_HEIGHT // 2 - 20
+                for line in controls:
+                    draw_text(screen, line, 20, SCREEN_WIDTH // 2, y, COLOR_GRAY if line else COLOR_BLACK)
+                    y += 26
 
             if self.game.state == "DEMO":
                 draw_text(screen, "⚡ DEMO MODE — ESC zum Beenden", 24, SCREEN_WIDTH//2, 30, COLOR_RED)
+
+            if self.game.state == "TUTORIAL" and self.game.tutorial_manager:
+                self.game.tutorial_manager.draw(screen)
 
             if self.game.state == "WIN_SCREEN":
                 self.game.grade_screen.draw(screen)

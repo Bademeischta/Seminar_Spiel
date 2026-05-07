@@ -273,7 +273,7 @@ class Player(pygame.sprite.Sprite):
             is_gold = False
             
             if self.parry_counter_timer > 0 or self.streber_mode:
-                damage *= 2
+                damage = damage * PLAYER_STREBER_DAMAGE_MULT
                 color = COLOR_GOLD
                 is_gold = True
 
@@ -579,14 +579,14 @@ class Player(pygame.sprite.Sprite):
 
         if is_perfect:
             self.game.style_points += 10 # Perfect Parry Style
-            self.cards = min(self.cards + 2, PLAYER_MAX_CARDS)
+            self.cards = min(self.cards + PLAYER_PARRY_CARD_PERFECT, PLAYER_MAX_CARDS)
             self.game.effect_manager.apply_slowmo(0.33, 0.3)
             self.game.effect_manager.apply_freeze(0.06)
             self.max_jumps = 3
             self.parry_boost_active = True
             self.game.perfect_parries += 1
         else:
-            self.cards = min(self.cards + 1, PLAYER_MAX_CARDS)
+            self.cards = min(self.cards + PLAYER_PARRY_CARD_NORMAL, PLAYER_MAX_CARDS)
             self.parry_boost_active = True
 
         self.game.action_log.append("parry")
@@ -602,8 +602,8 @@ class Player(pygame.sprite.Sprite):
 
         if self.parry_chain >= 3:
             self.streber_mode = True
-            self.parry_chain_timer = 10.0
-            self.parry_counter_timer = 10.0
+            self.parry_chain_timer = PLAYER_STREBER_DURATION
+            self.parry_counter_timer = PLAYER_STREBER_DURATION
             self.game.effect_manager.add_damage_number(self.rect.center, "STREBER MODE!", color=COLOR_GOLD, size=32)
 
     def take_damage(self):
@@ -616,7 +616,7 @@ class Player(pygame.sprite.Sprite):
              self.hp = 0
              self.i_frames = 0
         else:
-             self.i_frames = 1.5
+             self.i_frames = PLAYER_IFRAMES_DURATION
 
         self.game.effect_manager.apply_shake(0.33, 10)
         self.game.particle_manager.spawn_hit(self.rect.center, color=COLOR_RED)
@@ -651,7 +651,7 @@ class Player(pygame.sprite.Sprite):
         
         color = self.color
         if self.streber_mode or self.parry_counter_timer > 0: color = COLOR_GOLD
-        if self.i_frames > 0 and (int(self.i_frames * 15) % 2 == 0): color = COLOR_WHITE
+        if self.i_frames > 0 and (int(self.i_frames * 6) % 2 == 0): color = COLOR_WHITE
         
         rect = pygame.Rect(0, 0, w, h)
         rect.midbottom = (draw_x, draw_y)

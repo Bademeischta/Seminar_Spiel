@@ -53,7 +53,9 @@ class Boss(pygame.sprite.Sprite):
         self.shield_timer = 0
 
     def update(self, dt):
-        if self.game.state == "DEMO":
+        if self.game.state in ("DEMO", "TUTORIAL"):
+            self.update_visuals(dt)
+            self.rect.center = (int(self.pos.x), int(self.pos.y))
             return
 
         if self.in_transition:
@@ -176,7 +178,12 @@ class Boss(pygame.sprite.Sprite):
         self.attack_pattern_index += 1
         self.state = 'idle'
 
-        timer = 2.0 if self.phase < 3 else 1.0
+        if self.phase == 1:
+            timer = BOSS_PHASE1_COOLDOWN
+        elif self.phase == 2:
+            timer = BOSS_PHASE2_COOLDOWN
+        else:
+            timer = BOSS_PHASE3_COOLDOWN
         if self.game.challenge and self.game.challenge.name == "No Dash":
              timer *= 0.8
 
@@ -193,8 +200,8 @@ class Boss(pygame.sprite.Sprite):
             self.dialogue = random.choice(["So einfach gibst du auf?", "Zeig mir, was du gelernt hast!"])
             self.dialogue_timer = 1.5
         
-        self.weak_point_timer = 1.0
-        
+        self.weak_point_timer = BOSS_WEAK_POINT_DURATION
+
         count = 5 if random.random() < 0.5 else 3
         for i in range(count):
             is_pink = (i == 2 or i == 4)
@@ -251,7 +258,7 @@ class Boss(pygame.sprite.Sprite):
         p = ProtractorSpin(self.game, self)
         self.game.all_sprites.add(p)
         self.game.boss_bullets.add(p)
-        self.weak_point_timer = 1.0
+        self.weak_point_timer = BOSS_WEAK_POINT_DURATION
 
     def slam_attack(self):
         s = TextbookSlam(self.game, self.game.player.rect.centerx)
@@ -269,7 +276,7 @@ class Boss(pygame.sprite.Sprite):
     # --- Phase 3 Attacks ---
     def compass_hell_advanced(self):
         for burst in range(3):
-            num_projs = 8
+            num_projs = 6  # was 8 – reduces bullet density to manageable levels
             for i in range(num_projs):
                 angle = (i * (360/num_projs)) + (burst * 15)
                 rad = math.radians(angle)
