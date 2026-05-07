@@ -155,7 +155,8 @@ class EXRuler(PlayerProjectile):
                 self.game.player.cards = min(self.game.player.cards + 1, PLAYER_MAX_CARDS)
                 self.game.effect_manager.add_damage_number(self.game.player.rect.center, "CATCH!", color=COLOR_GREEN, size=24)
                 self.kill()
-                
+                return
+
             if dir_vec.length() > 0:
                 self.vel = dir_vec.normalize() * 900
 

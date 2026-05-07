@@ -50,15 +50,17 @@ class SaveSystem:
                 print(f"Error loading save file: {e}")
 
     def save(self):
+        if not getattr(self, '_dirty', True):
+            return
         try:
             with open(SAVE_FILE, 'w') as f:
                 json.dump(self.data, f, indent=4)
+            self._dirty = False
         except Exception as e:
             print(f"Error saving file: {e}")
 
     def update_stat(self, stat_name, value, mode="add"):
         if stat_name not in self.data["stats"]:
-            # Key dynamisch erstellen mit sinnvollem Default
             self.data["stats"][stat_name] = 0 if mode == "add" else value
 
         if mode == "add":
@@ -72,7 +74,7 @@ class SaveSystem:
             self.data["stats"][stat_name] = max(self.data["stats"][stat_name], value)
         elif mode == "set":
             self.data["stats"][stat_name] = value
-        self.save()
+        self._dirty = True
 
     def unlock_skin(self, skin_name):
         if skin_name not in self.data["unlocks"]["skins"]:

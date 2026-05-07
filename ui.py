@@ -49,6 +49,43 @@ class HUD:
         focus_fill = (self.game.player.focus_time / PLAYER_FOCUS_MAX_DURATION) * 170
         pygame.draw.rect(screen, COLOR_CYAN, (20, 115, focus_fill, 10))
 
+        p = self.game.player
+        y_status = 132
+
+        # Shield cooldown bar
+        shield_cd = p.shield_cooldown
+        if shield_cd > 0:
+            bar_fill = max(0.0, 1.0 - shield_cd / PLAYER_SHIELD_COOLDOWN)
+            pygame.draw.rect(screen, COLOR_DARK_GRAY, (20, y_status, 80, 8))
+            pygame.draw.rect(screen, COLOR_CYAN, (20, y_status, int(80 * bar_fill), 8))
+            draw_text(screen, "E-CD", 12, 105, y_status + 4, COLOR_GRAY)
+        else:
+            pygame.draw.rect(screen, COLOR_CYAN, (20, y_status, 80, 8))
+            draw_text(screen, "E bereit", 12, 110, y_status + 4, COLOR_CYAN)
+        y_status += 14
+
+        # Dash cooldown indicator
+        dash_cd = p.dash_cooldown_timer
+        if dash_cd > 0:
+            bar_fill = max(0.0, 1.0 - dash_cd / PLAYER_DASH_COOLDOWN)
+            pygame.draw.rect(screen, COLOR_DARK_GRAY, (20, y_status, 80, 8))
+            pygame.draw.rect(screen, COLOR_ORANGE, (20, y_status, int(80 * bar_fill), 8))
+            draw_text(screen, "Dash-CD", 12, 115, y_status + 4, COLOR_GRAY)
+        else:
+            pygame.draw.rect(screen, COLOR_ORANGE, (20, y_status, 80, 8))
+            draw_text(screen, "Dash bereit", 12, 120, y_status + 4, COLOR_ORANGE)
+        y_status += 14
+
+        # Parry chain counter
+        if p.parry_chain > 0 or p.streber_mode:
+            if p.streber_mode:
+                label = "STREBER!"
+                color = COLOR_GOLD
+            else:
+                label = f"Chain {p.parry_chain}/3"
+                color = COLOR_PINK
+            draw_text(screen, label, 14, 60, y_status + 4, color)
+
         if self.game.challenge:
              draw_text(screen, f"CHALLENGE: {self.game.challenge.name}", 20, SCREEN_WIDTH - 150, 100, COLOR_GOLD)
              if self.game.challenge.name == "Parry Only":
@@ -129,7 +166,22 @@ class GradeScreen:
             y += 50
 
         draw_text(screen, f"GRADE: {self.grade}", 80, SCREEN_WIDTH//2, y + 50, COLOR_GOLD if "S" in self.grade else COLOR_WHITE)
-        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 50, COLOR_GRAY)
+
+        t = self.stats['time']
+        p_count = self.stats['parries']
+        hits = PLAYER_MAX_HP - self.stats['hp']
+        if self.grade not in ("S", "S+"):
+            if p_count < 10:
+                hint = f"Tipp: Mehr Parieren ({p_count}/15) verbessert den Rang!"
+            elif hits > 2:
+                hint = "Tipp: Weniger Treffer einstecken für S-Rang!"
+            elif t > 150:
+                hint = "Tipp: Schneller spielen verbessert den Zeit-Score!"
+            else:
+                hint = "Tipp: Style-Punkte durch Weak-Point-Treffer sammeln!"
+            draw_text(screen, hint, 18, SCREEN_WIDTH//2, y + 145, COLOR_GRAY)
+
+        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 30, COLOR_GRAY)
 
 class Menu:
     def __init__(self, game):
