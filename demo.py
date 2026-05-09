@@ -14,12 +14,12 @@ class DemoMode:
         self.setup_demo()
 
     def setup_demo(self):
-        self.game.player.hp = 999
+        self.game.player.hp = PLAYER_MAX_HP
         self.game.player.cards = 5
         self.game.boss.state = 'idle'
 
     def update(self, dt):
-        self.game.player.hp = 999
+        self.game.player.hp = PLAYER_MAX_HP
         self.game.player.cards = 5
 
         if self.is_bot:
@@ -38,11 +38,11 @@ class DemoMode:
         if random.random() < 0.2 * dt:
              self.spawn_parry_projectile(is_bot=True)
 
-        # Bot parry reaction
+        # Bot parry reaction – 50% success rate for realistic demo feel
         for bullet in self.game.boss_bullets:
              if hasattr(bullet, 'is_parryable') and bullet.is_parryable:
                   dist = pygame.math.Vector2(bullet.rect.center).distance_to(self.game.player.rect.center)
-                  if dist < 100 and self.game.player.parry_active_timer <= 0:
+                  if dist < 100 and self.game.player.parry_active_timer <= 0 and random.random() < 0.5:
                        self.game.player.parry_active_timer = PLAYER_PARRY_WINDOW
                        self.game.player.perfect_parry_window = PLAYER_PERFECT_PARRY_WINDOW
                        self.game.player.add_ability_label("PARRY")

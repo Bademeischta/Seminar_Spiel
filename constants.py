@@ -68,6 +68,7 @@ PLAYER_EX_RULER_COST = 2
 PLAYER_EX_SUPER_COST = 5
 PLAYER_EX_SUPER_DAMAGE_CAP = 25
 PLAYER_CHARGE_DURATION = 1.0 # 60 / 60
+PLAYER_CHARGE_SHOT_DAMAGE = 6              # was hardcoded 3 – charge shot now meaningfully stronger
 PLAYER_SHIELD_COOLDOWN = 3.5           # was 5.0 – shield more usable in emergencies
 PLAYER_FOCUS_MAX_DURATION = 3.0 # 180 / 60
 PLAYER_FOCUS_REGEN_RATE = 0.2

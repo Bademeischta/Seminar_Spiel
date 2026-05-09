@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import os
 from constants import *
 from projectiles import PlayerProjectile, EXFlieger, EXEraser, EXRuler, EXSuper, SpreadProjectile, HomingProjectile
 from boss_projectiles import ProtractorSpin
@@ -86,6 +87,85 @@ class Player(pygame.sprite.Sprite):
         self.ability_labels = []
         self.momentum_grace_timer = 0
 
+        # Sprite animation
+        self._sprites = {}
+        self._walk_frame = 0
+        self._walk_frame_timer = 0.0
+        self._shot_anim_timer = 0.0
+        self._jump_start_timer = 0.0
+        self._load_sprites()
+
+    def _load_sprites(self):
+        sprite_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', 'Spieler')
+        scale = 2  # 30 px → 60 px
+
+        def _load(filename):
+            path = os.path.join(sprite_dir, filename)
+            try:
+                img = pygame.image.load(path).convert_alpha()
+                return pygame.transform.scale(img, (30 * scale, 30 * scale))
+            except Exception:
+                return None
+
+        self._sprites = {
+            'idle': [_load('idle.png')],
+            'walk': [_load(f'pixil-frame-{i}.png') for i in range(3)],
+            'jump': [
+                _load('absprung_1.png'),           # 0 – take-off
+                _load('jump_aufstieg_2.png'),       # 1 – ascending
+                _load('jump_scheitelpunkt_3.png'),  # 2 – apex
+                _load('jump_landung_4.png'),        # 3 – descending
+            ],
+            'shot': [
+                _load('shot_aufladen_1.png'),   # 0 – charging
+                _load('shot_entladen_2.png'),   # 1 – discharge
+                _load('shot_rückstoß_3.png'),   # 2 – recoil
+                _load('shot_recover_4.png'),    # 3 – recovery
+                _load('shot_readyup_5.png'),    # 4 – ready-up
+            ],
+        }
+
+    def _get_current_sprite(self):
+        # Post-shot animation (discharge → recoil → recovery → ready-up)
+        if self._shot_anim_timer > 0:
+            t = self._shot_anim_timer
+            if t > 0.20:   idx = 1
+            elif t > 0.13: idx = 2
+            elif t > 0.07: idx = 3
+            else:          idx = 4
+            spr = self._sprites['shot'][idx]
+            if spr:
+                return spr
+
+        # Charging
+        if self.is_charging:
+            spr = self._sprites['shot'][0]
+            if spr:
+                return spr
+
+        # Airborne
+        if not self.is_grounded:
+            if self._jump_start_timer > 0:
+                idx = 0
+            elif self.vel.y < -150:
+                idx = 1
+            elif abs(self.vel.y) <= 150:
+                idx = 2
+            else:
+                idx = 3
+            spr = self._sprites['jump'][idx]
+            if spr:
+                return spr
+
+        # Walking
+        if abs(self.vel.x) > 30 and self.is_grounded:
+            spr = self._sprites['walk'][self._walk_frame]
+            if spr:
+                return spr
+
+        # Idle
+        return self._sprites['idle'][0]
+
     def handle_input(self, dt):
         if self.game.state == "DEMO" and self.game.is_demo_bot:
              return
@@ -109,7 +189,7 @@ class Player(pygame.sprite.Sprite):
                 if self.game.effect_manager.slowmo_timer <= 0:
                     self.game.effect_manager.time_scale = 1.0
             self.is_focusing = False
-            if self.focus_time < PLAYER_FOCUS_MAX_DURATION:
+            if self.focus_time < PLAYER_FOCUS_MAX_DURATION and not self.is_dashing:
                 self.focus_time += PLAYER_FOCUS_REGEN_RATE * dt
 
         # Movement Acceleration
@@ -199,7 +279,8 @@ class Player(pygame.sprite.Sprite):
             self.jump_count += 1
             self.is_grounded = False
             self.drop_timer = 0
-            
+            self._jump_start_timer = 0.10
+
             self.squash_factor = pygame.math.Vector2(0.8, 1.2)
             self.squash_timer = 0.166
             self.spawn_jump_particles()
@@ -287,15 +368,17 @@ class Player(pygame.sprite.Sprite):
             self.game.all_sprites.add(bullet)
             self.game.player_bullets.add(bullet)
             self.shoot_timer = 0.166
+            self._shot_anim_timer = 0.25
 
     def shoot_charge(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
             return
         self.sound_manager.play("charge_shot")
         bullet = PlayerProjectile(self.game, self.rect.centerx, self.rect.centery,
-                                 900 if self.facing_right else -900, 0, 3, COLOR_LIGHT_BLUE, size=(30, 30))
+                                 900 if self.facing_right else -900, 0, PLAYER_CHARGE_SHOT_DAMAGE, COLOR_LIGHT_BLUE, size=(30, 30))
         self.game.all_sprites.add(bullet)
         self.game.player_bullets.add(bullet)
+        self._shot_anim_timer = 0.25
         
     def shoot_spread(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
@@ -455,10 +538,25 @@ class Player(pygame.sprite.Sprite):
                 self.ability_labels.remove(label)
 
     def update_animation(self, dt):
-        pass
+        # Walk cycle
+        if self.is_grounded and abs(self.vel.x) > 30:
+            self._walk_frame_timer += dt
+            if self._walk_frame_timer >= 0.12:
+                self._walk_frame_timer = 0.0
+                self._walk_frame = (self._walk_frame + 1) % 3
+        else:
+            self._walk_frame_timer = 0.0
+
+        if self._jump_start_timer > 0:
+            self._jump_start_timer -= dt
+        if self._shot_anim_timer > 0:
+            self._shot_anim_timer -= dt
 
     def check_collisions(self, dt):
-        if not self.is_grounded and not self.is_dashing:
+        was_grounded = self.is_grounded
+        self.is_grounded = False  # reset each frame; re-confirmed below if touching ground
+
+        if not was_grounded and not self.is_dashing:
             if self.rect.left <= 0:
                 self.on_wall = 'left'
                 if self.prev_on_wall is None:
@@ -478,12 +576,12 @@ class Player(pygame.sprite.Sprite):
 
         if self.game.inverted_gravity:
             if self.pos.y <= 0:
-                if not self.is_grounded:
+                if not was_grounded:
                     self.spawn_jump_particles()
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
-                    
+
                 self.pos.y = 0
                 self.vel.y = 0
                 self.is_grounded = True
@@ -494,12 +592,12 @@ class Player(pygame.sprite.Sprite):
                 self.max_jumps = 2 if not self.streber_mode else 3
         else:
             if self.pos.y >= SCREEN_HEIGHT:
-                if not self.is_grounded:
+                if not was_grounded:
                     self.spawn_jump_particles()
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
-                    
+
                 self.pos.y = SCREEN_HEIGHT
                 self.vel.y = 0
                 self.is_grounded = True
@@ -642,34 +740,73 @@ class Player(pygame.sprite.Sprite):
                 alpha = int((2.0 - t) / 0.33 * 255)
             elif t < 0.33:
                 alpha = int(t / 0.33 * 255)
-
-            draw_text(screen, label["text"], 36, self.rect.centerx - camera_offset.x, self.rect.top - 80 - camera_offset.y, color=COLOR_GOLD, alpha=alpha)
+            draw_text(screen, label["text"], 36,
+                      self.rect.centerx - camera_offset.x,
+                      self.rect.top - 80 - camera_offset.y,
+                      color=COLOR_GOLD, alpha=alpha)
 
         draw_x = self.pos.x - camera_offset.x
         draw_y = self.pos.y - camera_offset.y
-        
-        w = self.width * self.squash_factor.x
-        h = self.height * self.squash_factor.y
-        
-        color = self.color
-        if self.streber_mode or self.parry_counter_timer > 0: color = COLOR_GOLD
-        if self.i_frames > 0 and (int(self.i_frames * 6) % 2 == 0): color = COLOR_WHITE
-        
-        rect = pygame.Rect(0, 0, w, h)
-        rect.midbottom = (draw_x, draw_y)
-        pygame.draw.rect(screen, color, rect)
-        
-        eye_offset = 10 if self.facing_right else -10
-        pygame.draw.circle(screen, COLOR_WHITE, (rect.centerx + eye_offset, rect.top + 15), 5)
-        
+
+        sprite = self._get_current_sprite()
+
+        if sprite:
+            sw, sh = sprite.get_size()
+            w = max(1, int(sw * self.squash_factor.x))
+            h = max(1, int(sh * self.squash_factor.y))
+            scaled = pygame.transform.scale(sprite, (w, h))
+
+            if not self.facing_right:
+                scaled = pygame.transform.flip(scaled, True, False)
+
+            iframes_flash = self.i_frames > 0 and (int(self.i_frames * 6) % 2 == 0)
+            if iframes_flash:
+                white = pygame.Surface(scaled.get_size(), pygame.SRCALPHA)
+                white.fill((255, 255, 255, 200))
+                scaled = scaled.copy()
+                scaled.blit(white, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            elif self.streber_mode or self.parry_counter_timer > 0:
+                gold = pygame.Surface(scaled.get_size(), pygame.SRCALPHA)
+                gold.fill((80, 60, 0, 110))
+                scaled = scaled.copy()
+                scaled.blit(gold, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+            draw_rect = scaled.get_rect()
+            draw_rect.midbottom = (int(draw_x), int(draw_y))
+            screen.blit(scaled, draw_rect)
+
+            if self.is_dashing and (int(self.dash_timer * 60) % 3 == 0):
+                self.game.particle_manager.add(
+                    AfterimageParticle(pygame.math.Vector2(draw_rect.topleft), scaled, 0.25, 150))
+
+            if self.is_charging:
+                pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
+                pygame.draw.rect(screen, COLOR_WHITE,
+                                 (draw_rect.left, draw_rect.top - 8, int(w * pct), 5))
+        else:
+            # Fallback: procedural rectangle
+            w = self.width * self.squash_factor.x
+            h = self.height * self.squash_factor.y
+            color = self.color
+            if self.streber_mode or self.parry_counter_timer > 0:
+                color = COLOR_GOLD
+            if self.i_frames > 0 and (int(self.i_frames * 6) % 2 == 0):
+                color = COLOR_WHITE
+            rect = pygame.Rect(0, 0, w, h)
+            rect.midbottom = (draw_x, draw_y)
+            pygame.draw.rect(screen, color, rect)
+            eye_offset = 10 if self.facing_right else -10
+            pygame.draw.circle(screen, COLOR_WHITE, (rect.centerx + eye_offset, rect.top + 15), 5)
+            if self.is_dashing and (int(self.dash_timer * 60) % 3 == 0):
+                surf = pygame.Surface((w, h), pygame.SRCALPHA)
+                pygame.draw.rect(surf, color, (0, 0, w, h))
+                self.game.particle_manager.add(
+                    AfterimageParticle(pygame.math.Vector2(rect.topleft), surf, 0.25, 150))
+            if self.is_charging:
+                pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
+                pygame.draw.rect(screen, COLOR_WHITE, (rect.left, rect.top - 10, w * pct, 5))
+
         if self.shield_active:
-            pygame.draw.circle(screen, COLOR_CYAN, rect.center, 50, 2)
-
-        if self.is_dashing and (int(self.dash_timer * 60) % 3 == 0):
-            surf = pygame.Surface((w, h), pygame.SRCALPHA)
-            pygame.draw.rect(surf, color, (0, 0, w, h))
-            self.game.particle_manager.add(AfterimageParticle(pygame.math.Vector2(rect.topleft), surf, 0.25, 150))
-
-        if self.is_charging:
-            pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
-            pygame.draw.rect(screen, COLOR_WHITE, (rect.left, rect.top - 10, w * pct, 5))
+            cx = int(draw_x)
+            cy = int(draw_y - self.height // 2)
+            pygame.draw.circle(screen, COLOR_CYAN, (cx, cy), 50, 2)

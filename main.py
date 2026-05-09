@@ -334,6 +334,9 @@ class Game:
         self.save_system.update_stat("best_time", self.game_time, mode="min")
         actual_damage = self.boss.max_hp - max(0, self.boss.hp)
         self.save_system.update_stat("total_damage_dealt", actual_damage)
+        self.save_system.update_stat("total_parries", self.total_parries)
+        self.save_system.update_stat("total_perfect_parries", self.perfect_parries)
+        self.save_system.update_stat("highest_parry_chain", self.player.parry_chain, mode="max")
 
         if self.challenge:
              chal_key = f"best_grade_{self.challenge.name.replace(' ', '_')}"
@@ -348,7 +351,8 @@ class Game:
              if self.challenge.name == "One Hit KO":
                   if "Perfektionist" not in self.save_system.data["unlocks"]["skins"]:
                        self.save_system.data["unlocks"]["skins"].append("Perfektionist")
-             self.save_system.save()
+
+        self.save_system.save()  # always persist stats, regardless of game mode
 
     def game_over(self):
         self.inactivity_timer = 0

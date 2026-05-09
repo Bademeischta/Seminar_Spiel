@@ -150,26 +150,53 @@ class GradeScreen:
 
     def draw(self, screen):
         screen.fill(COLOR_BLACK)
-        draw_text(screen, "KAMPF-STATISTIK", 48, SCREEN_WIDTH//2, 80, COLOR_YELLOW)
-
-        y = 180
-        stats_labels = [
-            f"Zeit: {int(self.stats['time'])}s",
-            f"Schaden genommen: {PLAYER_MAX_HP - self.stats['hp']} Treffer",
-            f"Parries: {self.stats['parries']} ({self.stats.get('perfect_parries', 0)} Perfect)",
-            f"Style-Events: {int(self.stats['style'])}",
-            f"SCORE: {self.score}"
-        ]
-
-        for label in stats_labels:
-            draw_text(screen, label, 30, SCREEN_WIDTH//2, y, COLOR_WHITE)
-            y += 50
-
-        draw_text(screen, f"GRADE: {self.grade}", 80, SCREEN_WIDTH//2, y + 50, COLOR_GOLD if "S" in self.grade else COLOR_WHITE)
+        draw_text(screen, "KAMPF-STATISTIK", 48, SCREEN_WIDTH//2, 60, COLOR_YELLOW)
 
         t = self.stats['time']
-        p_count = self.stats['parries']
         hits = PLAYER_MAX_HP - self.stats['hp']
+        p_count = self.stats['parries']
+        style = int(self.stats['style'])
+        perfect = self.stats.get('perfect_parries', 0)
+
+        # Recalculate individual scores for the breakdown display
+        if t < 90:   ts = 100
+        elif t < 120: ts = 85
+        elif t < 180: ts = 70
+        elif t < 240: ts = 50
+        else:         ts = 30
+
+        if hits == 0:   ds = 100
+        elif hits == 1: ds = 80
+        elif hits == 2: ds = 60
+        elif hits == 3: ds = 40
+        else:           ds = 20
+
+        if p_count >= 15:   ps = 100
+        elif p_count >= 10: ps = 80
+        elif p_count >= 5:  ps = 60
+        elif p_count >= 1:  ps = 40
+        else:               ps = 0
+
+        ss = min(100, style)
+
+        rows = [
+            (f"Zeit:           {int(t)}s", f"{int(ts * 0.3)}/30 Pkt",   ts >= 85),
+            (f"Treffer:        {hits}",    f"{int(ds * 0.3)}/30 Pkt",   ds >= 80),
+            (f"Parries:        {p_count} ({perfect} Perfect)", f"{int(ps * 0.2)}/20 Pkt", ps >= 60),
+            (f"Style-Events:   {style}",  f"{int(ss * 0.2)}/20 Pkt",   ss >= 60),
+        ]
+
+        y = 155
+        for label, pts, good in rows:
+            col = COLOR_GREEN if good else COLOR_WHITE
+            draw_text(screen, label, 24, SCREEN_WIDTH // 2 - 60, y, col, center=False)
+            draw_text(screen, pts, 24, SCREEN_WIDTH // 2 + 230, y, col)
+            y += 38
+
+        draw_text(screen, f"SCORE: {self.score}", 28, SCREEN_WIDTH//2, y + 10, COLOR_WHITE)
+        draw_text(screen, f"GRADE: {self.grade}", 80, SCREEN_WIDTH//2, y + 60,
+                  COLOR_GOLD if "S" in self.grade else COLOR_WHITE)
+
         if self.grade not in ("S", "S+"):
             if p_count < 10:
                 hint = f"Tipp: Mehr Parieren ({p_count}/15) verbessert den Rang!"
@@ -179,9 +206,9 @@ class GradeScreen:
                 hint = "Tipp: Schneller spielen verbessert den Zeit-Score!"
             else:
                 hint = "Tipp: Style-Punkte durch Weak-Point-Treffer sammeln!"
-            draw_text(screen, hint, 18, SCREEN_WIDTH//2, y + 145, COLOR_GRAY)
+            draw_text(screen, hint, 18, SCREEN_WIDTH//2, y + 155, COLOR_GRAY)
 
-        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 30, COLOR_GRAY)
+        draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 20, COLOR_GRAY)
 
 class Menu:
     def __init__(self, game):
@@ -255,7 +282,7 @@ class ChallengeSelectScreen:
             {"name": "One Hit KO", "desc": "Ein Treffer = Tod. Weniger Boss-HP.", "diff": 5},
             {"name": "Parry Only", "desc": "Nur Parries machen Schaden.", "diff": 4},
             {"name": "Boss Rush", "desc": "Direkt zu Phase 3.", "diff": 4},
-            {"name": "Mirror Match", "desc": "Boss kopiert deine Aktionen.", "diff": 5}
+            {"name": "Mirror Match", "desc": "Boss kopiert deine Aktionen.", "diff": 3}
         ]
         self.selected = 0
 
