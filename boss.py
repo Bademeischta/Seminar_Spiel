@@ -51,6 +51,7 @@ class Boss(pygame.sprite.Sprite):
 
         self.shield_active = False
         self.shield_timer = 0
+        self._attack_count = 0  # drives periodic dialogue
 
     def update(self, dt):
         if self.game.state in ("DEMO", "TUTORIAL"):
@@ -88,6 +89,37 @@ class Boss(pygame.sprite.Sprite):
         self.update_visuals(dt)
         
         self.rect.center = self.pos + self.vibrate_offset
+
+    _DIALOGUE_POOL = {
+        1: [
+            "Das nennt ihr Mathematik?",
+            "Ich habe schon Besseres gesehen!",
+            "Konzentriert euch!",
+            "Zeig mir, was du gelernt hast!",
+            "So einfach gibst du auf?",
+        ],
+        2: [
+            "Ihr macht mir keine Angst!",
+            "Das Seminar gehört MIR!",
+            "Ihr werdet alle durchfallen!",
+            "Rechnen lernen! JETZT!",
+            "Interessant... aber nicht gut genug.",
+        ],
+        3: [
+            "WENN ICH NICHT GEWINNE... DANN NIEMAND!",
+            "MAXIMALE SCHWIERIGKEITSSTUFE!",
+            "DAS IST ERST DER ANFANG!",
+            "IHR HABT KEINE CHANCE!",
+            "MATHEMATIK IST UNAUSWEICHLICH!",
+        ],
+    }
+
+    def _maybe_dialogue(self, force=False):
+        self._attack_count += 1
+        if force or self._attack_count % 2 == 0:
+            pool = self._DIALOGUE_POOL.get(self.phase, self._DIALOGUE_POOL[1])
+            self.dialogue = random.choice(pool)
+            self.dialogue_timer = 2.0
 
     def check_phase(self):
         if self.hp <= 0:
@@ -197,9 +229,7 @@ class Boss(pygame.sprite.Sprite):
 
     # --- Phase 1 Attacks ---
     def geometry_attack(self):
-        if random.random() < 0.2:
-            self.dialogue = random.choice(["So einfach gibst du auf?", "Zeig mir, was du gelernt hast!"])
-            self.dialogue_timer = 1.5
+        self._maybe_dialogue()
         
         self.weak_point_timer = BOSS_WEAK_POINT_DURATION
 
@@ -214,6 +244,7 @@ class Boss(pygame.sprite.Sprite):
             self.game.boss_bullets.add(p)
 
     def eraser_attack(self):
+        self._maybe_dialogue()
         e1 = BouncingEraser(self.game, self.rect.centerx, self.rect.centery, size_mult=1.0)
         self.game.all_sprites.add(e1)
         self.game.boss_bullets.add(e1)
@@ -224,6 +255,7 @@ class Boss(pygame.sprite.Sprite):
             self.game.boss_bullets.add(e2)
 
     def wipe_attack(self):
+        self._maybe_dialogue()
         for i in range(5):
             is_pink = (i == 2)
             p = BossProjectile(self.game, SCREEN_WIDTH + i*40, i*120, -180, 0, color=COLOR_WHITE, size=(40, 100), is_parryable=is_pink)
@@ -256,6 +288,7 @@ class Boss(pygame.sprite.Sprite):
             self.game.boss_bullets.add(p)
 
     def protractor_attack(self):
+        self._maybe_dialogue()
         p = ProtractorSpin(self.game, self)
         self.game.all_sprites.add(p)
         self.game.boss_bullets.add(p)
@@ -276,6 +309,7 @@ class Boss(pygame.sprite.Sprite):
 
     # --- Phase 3 Attacks ---
     def compass_hell_advanced(self):
+        self._maybe_dialogue(force=True)
         for burst in range(3):
             num_projs = 6  # was 8 – reduces bullet density to manageable levels
             for i in range(num_projs):
@@ -294,11 +328,11 @@ class Boss(pygame.sprite.Sprite):
     def reality_break(self):
         effect = random.choice(['invert_controls', 'invert_gravity', 'slow_mo'])
         self.reality_break_pending_type = effect
-        self.reality_break_warning_timer = 1.0
+        self.reality_break_warning_timer = 2.0  # was 1.0 – players now have time to react
         self.game.effect_manager.apply_shake(1.0, 2, type='rumble')
         _labels = {'invert_controls': 'STEUERUNG INVERTIERT', 'invert_gravity': 'SCHWERKRAFT UMGEKEHRT', 'slow_mo': 'ZEITLUPE'}
         self.dialogue = f"REALITY BREAK: {_labels.get(effect, effect.upper())}!"
-        self.dialogue_timer = 1.0
+        self.dialogue_timer = 2.0
 
     def blackboard_barrage(self):
         self.sound_manager.play("ultimate_attack")
