@@ -210,20 +210,98 @@ class GradeScreen:
 
         draw_text(screen, "Press ENTER to continue", 20, SCREEN_WIDTH//2, SCREEN_HEIGHT - 20, COLOR_GRAY)
 
+class SettingsScreen:
+    def __init__(self, game):
+        self.game = game
+        self._opts = [
+            ("Sound-Effekte", "sfx_enabled", "bool"),
+            ("Lautstärke",    "sfx_volume",  "vol"),
+        ]
+        self._vol_steps = [0.0, 0.25, 0.50, 0.75, 1.0]
+        self.selected = 0
+
+    def _sm(self):
+        return self.game.sound_manager
+
+    def _fmt(self, key, kind):
+        sm = self._sm()
+        if kind == "bool":
+            return "AN" if sm.sfx_enabled else "AUS"
+        return f"{int(round(sm.sfx_volume * 100))}%"
+
+    def _change(self, key, kind, delta):
+        sm = self._sm()
+        if kind == "bool":
+            sm.sfx_enabled = not sm.sfx_enabled
+        else:
+            steps = self._vol_steps
+            idx = min(range(len(steps)), key=lambda i: abs(steps[i] - sm.sfx_volume))
+            idx = max(0, min(len(steps) - 1, idx + delta))
+            sm.sfx_volume = steps[idx]
+            if sm.sfx_enabled:
+                sm.play("parry")
+        # Persist settings
+        if "settings" not in self.game.save_system.data:
+            self.game.save_system.data["settings"] = {}
+        self.game.save_system.data["settings"]["sfx_enabled"] = sm.sfx_enabled
+        self.game.save_system.data["settings"]["sfx_volume"]  = sm.sfx_volume
+        self.game.save_system.save()
+
+    def draw(self, screen):
+        screen.fill(COLOR_BLACK)
+        draw_text(screen, "EINSTELLUNGEN", 52, SCREEN_WIDTH // 2, 110, COLOR_CYAN)
+
+        col_label = SCREEN_WIDTH // 2 - 120
+        col_value = SCREEN_WIDTH // 2 + 150
+
+        for i, (label, key, kind) in enumerate(self._opts):
+            sel = (i == self.selected)
+            color = COLOR_WHITE if sel else COLOR_GRAY
+            y = 250 + i * 80
+            draw_text(screen, label, 30, col_label, y, color, center=False)
+            val_str = f"◄  {self._fmt(key, kind)}  ►"
+            draw_text(screen, val_str, 30, col_value, y,
+                      COLOR_YELLOW if sel else COLOR_GRAY)
+
+        draw_text(screen,
+                  "W/S – Auswählen   |   ◄► – Ändern   |   ESC – Zurück",
+                  18, SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50, COLOR_GRAY)
+
+    def update(self, events):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_w, pygame.K_UP):
+                    self.selected = (self.selected - 1) % len(self._opts)
+                elif event.key in (pygame.K_s, pygame.K_DOWN):
+                    self.selected = (self.selected + 1) % len(self._opts)
+                elif event.key == pygame.K_LEFT:
+                    _, key, kind = self._opts[self.selected]
+                    self._change(key, kind, -1)
+                elif event.key in (pygame.K_RIGHT, pygame.K_RETURN):
+                    _, key, kind = self._opts[self.selected]
+                    self._change(key, kind, 1)
+                elif event.key == pygame.K_ESCAPE:
+                    return "BACK"
+        return None
+
+
 class Menu:
     def __init__(self, game):
         self.game = game
-        self.options = ["TUTORIAL", "START GAME", "CHALLENGE MODES", "DEMO MODE", "STATISTICS", "QUIT"]
+        self.options = ["TUTORIAL", "START GAME", "CHALLENGE MODES",
+                        "DEMO MODE", "STATISTICS", "SETTINGS", "QUIT"]
         self.selected = 0
 
     def draw(self, screen):
         screen.fill(COLOR_BLACK)
-        draw_text(screen, "DR. PYTHAGORAS 2.0", 64, SCREEN_WIDTH//2, 150, COLOR_LIGHT_RED)
+        draw_text(screen, "DR. PYTHAGORAS 2.0", 64, SCREEN_WIDTH//2, 130, COLOR_LIGHT_RED)
 
+        n = len(self.options)
+        start_y = SCREEN_HEIGHT // 2 - (n * 52) // 2 + 20
         for i, opt in enumerate(self.options):
             color = COLOR_WHITE if i == self.selected else COLOR_GRAY
-            size = 40 if i == self.selected else 30
-            draw_text(screen, opt, size, SCREEN_WIDTH//2, 300 + i * 60, color)
+            size = 38 if i == self.selected else 28
+            draw_text(screen, opt, size, SCREEN_WIDTH//2, start_y + i * 52, color)
 
     def update(self, events):
         for event in events:
@@ -349,6 +427,7 @@ class UIManager:
         self.menu = Menu(game)
         self.statistics_screen = StatisticsScreen(game, game.save_system.data)
         self.challenge_screen = ChallengeSelectScreen(game)
+        self.settings_screen = SettingsScreen(game)
         self.demo_panel = DemoAbilityPanel(game)
 
     def draw_game_over(self, screen):
@@ -365,6 +444,8 @@ class UIManager:
     def draw(self, screen):
         if self.game.state == "MENU":
             self.menu.draw(screen)
+        elif self.game.state == "SETTINGS":
+            self.settings_screen.draw(screen)
         elif self.game.state == "CHALLENGE_SELECT":
             self.challenge_screen.draw(screen)
         elif self.game.state == "STATISTICS":

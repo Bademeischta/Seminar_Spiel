@@ -31,6 +31,10 @@ class SaveSystem:
             "medals": {
                 "no_hit": False,
                 "perfect": False
+            },
+            "settings": {
+                "sfx_enabled": True,
+                "sfx_volume": 0.75
             }
         }
 

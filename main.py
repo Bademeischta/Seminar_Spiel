@@ -21,12 +21,19 @@ class Platform(pygame.sprite.Sprite):
 
 class Game:
     def __init__(self):
+        pygame.mixer.pre_init(22050, -16, 2, 512)
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.render_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Dr. Pythagoras 2.0 - Ultimate Boss Fight")
         self.clock = pygame.time.Clock()
         self.save_system = SaveSystem()
+
+        # Apply persisted audio settings before UIManager init generates sounds
+        _settings = self.save_system.data.get("settings", {})
+        _sm = SoundManager()
+        _sm.sfx_enabled = _settings.get("sfx_enabled", True)
+        _sm.sfx_volume  = _settings.get("sfx_volume",  0.75)
 
         self.state = "MENU"
         self.ui_manager = UIManager(self)
@@ -137,6 +144,8 @@ class Game:
                     self.reset_game(challenge_name=None, is_demo_interactive=True)
                 elif action == "STATISTICS":
                     self.state = "STATISTICS"
+                elif action == "SETTINGS":
+                    self.state = "SETTINGS"
                 elif action == "QUIT":
                     pygame.quit()
                     sys.exit()
@@ -151,6 +160,11 @@ class Game:
 
             elif self.state == "STATISTICS":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.state = "MENU"
+
+            elif self.state == "SETTINGS":
+                result = self.ui_manager.settings_screen.update([event])
+                if result == "BACK":
                     self.state = "MENU"
 
             elif self.state == "GAME_OVER":
