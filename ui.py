@@ -1,13 +1,39 @@
 import pygame
 import math
+import os
 from constants import *
 from utils import draw_text
+
+def _load_icon(filename, size):
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', 'icons', filename)
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        return pygame.transform.scale(img, size)
+    except Exception:
+        return None
 
 class HUD:
     def __init__(self, game):
         self.game = game
+        self._icons = None
+
+    def _ensure_icons(self):
+        if self._icons is not None:
+            return
+        card_size = (30, 45)
+        ex_size = (28, 28)
+        self._icons = {
+            'blitz_voll': _load_icon('Blitz voll.png', card_size),
+            'blitz_halb': _load_icon('Blitz halb.png', card_size),
+            'blitz_leer': _load_icon('Blitz leer.png', card_size),
+            'ex_flieger': _load_icon('Stift 1.png', ex_size),
+            'ex_eraser':  _load_icon('Rauchverbot.png', ex_size),
+            'ex_ruler':   _load_icon('Lineal.png', ex_size),
+        }
 
     def draw(self, screen):
+        self._ensure_icons()
+
         # Player HP
         for i in range(PLAYER_MAX_HP):
             rect = pygame.Rect(20 + i * 40, 20, 30, 30)
@@ -16,7 +42,7 @@ class HUD:
             else:
                 pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, 2)
 
-        # Special Meter (Cards)
+        # Special Meter (Cards) – lightning bolt icons
         for i in range(PLAYER_MAX_CARDS):
             rect = pygame.Rect(20 + i * 35, 60, 30, 45)
             fill = 0
@@ -25,23 +51,31 @@ class HUD:
             elif i == int(self.game.player.cards):
                 fill = self.game.player.cards % 1.0
 
-            color = COLOR_BLUE
-            pygame.draw.rect(screen, color, rect, 2)
-            
-            if fill > 0:
-                fill_rect = rect.copy()
-                fill_rect.height = int(rect.height * fill)
-                fill_rect.bottom = rect.bottom
-                
-                draw_color = COLOR_BLUE
-                if self.game.player.cards >= 5:
-                    pulse = (math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5 * 255
-                    draw_color = (100, min(255, 100 + int(pulse * 0.6)), 255)
-                
-                pygame.draw.rect(screen, draw_color, fill_rect)
-                
-                if i < int(self.game.player.cards):
-                     pygame.draw.rect(screen, COLOR_WHITE, rect.inflate(-10, -10), 1)
+            if fill >= 1.0:
+                icon_key = 'blitz_voll'
+            elif fill > 0:
+                icon_key = 'blitz_halb'
+            else:
+                icon_key = 'blitz_leer'
+
+            icon = self._icons.get(icon_key)
+            if icon:
+                if self.game.player.cards >= 5 and fill >= 1.0:
+                    pulse = int((math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5 * 60)
+                    tinted = icon.copy()
+                    tinted.fill((pulse, pulse, 0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+                    screen.blit(tinted, rect.topleft)
+                else:
+                    screen.blit(icon, rect.topleft)
+            else:
+                # Fallback to rectangles
+                color = COLOR_BLUE
+                pygame.draw.rect(screen, color, rect, 2)
+                if fill > 0:
+                    fill_rect = rect.copy()
+                    fill_rect.height = int(rect.height * fill)
+                    fill_rect.bottom = rect.bottom
+                    pygame.draw.rect(screen, color, fill_rect)
 
         # Focus Meter
         focus_rect = pygame.Rect(20, 115, 170, 10)
@@ -49,8 +83,25 @@ class HUD:
         focus_fill = (self.game.player.focus_time / PLAYER_FOCUS_MAX_DURATION) * 170
         pygame.draw.rect(screen, COLOR_CYAN, (20, 115, focus_fill, 10))
 
+        # EX-Ability Selector icons
+        ex_map = [('Flieger', 'ex_flieger'), ('Eraser', 'ex_eraser'), ('Ruler', 'ex_ruler')]
+        selected_ex = self.game.player.selected_ex
+        for j, (name, key) in enumerate(ex_map):
+            ix = 20 + j * 36
+            iy = 130
+            icon = self._icons.get(key)
+            is_selected = (selected_ex == name)
+            if is_selected:
+                pygame.draw.rect(screen, COLOR_WHITE, (ix - 2, iy - 2, 32, 32), 2)
+            if icon:
+                screen.blit(icon, (ix, iy))
+            else:
+                color = COLOR_WHITE if is_selected else COLOR_DARK_GRAY
+                pygame.draw.rect(screen, color, (ix, iy, 28, 28), 1 if not is_selected else 0)
+                draw_text(screen, name[:1], 14, ix + 14, iy + 14, COLOR_WHITE)
+
         p = self.game.player
-        y_status = 132
+        y_status = 168
 
         # Shield cooldown bar
         shield_cd = p.shield_cooldown
