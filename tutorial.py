@@ -246,8 +246,9 @@ class TutorialManager:
             t = pygame.time.get_ticks() / 1000.0
             offset = int(math.sin(t * 4) * 8)
             boss = self.game.boss
-            bx = boss.rect.centerx
-            by = boss.rect.centery - 20 + offset
+            cam = self.game.effect_manager.get_camera_offset()
+            bx = boss.rect.centerx - int(cam.x)
+            by = boss.rect.centery - 20 + offset - int(cam.y)
             pygame.draw.polygon(screen, COLOR_YELLOW, [
                 (bx - 12, by - 20), (bx + 12, by - 20), (bx, by)
             ])

@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 from constants import *
+from utils import get_font
 
 class Particle:
     def __init__(self, pos, vel, lifetime, color, size, priority=1, gravity=0):
@@ -24,24 +25,32 @@ class Particle:
         pass
 
 class SquareParticle(Particle):
+    def __init__(self, pos, vel, lifetime, color, size, priority=1, gravity=0):
+        super().__init__(pos, vel, lifetime, color, size, priority, gravity)
+        self._surf = pygame.Surface((max(1, size), max(1, size)), pygame.SRCALPHA)
+
     def draw(self, screen, camera_offset):
-        rect = pygame.Rect(0, 0, self.size, self.size)
-        rect.center = (self.pos.x - camera_offset.x, self.pos.y - camera_offset.y)
-        
         alpha = int(max(0, min(255, (self.lifetime / self.max_lifetime) * 255)))
-        surf = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        pygame.draw.rect(surf, (*self.color, alpha) if len(self.color) == 3 else self.color, (0, 0, self.size, self.size))
-        screen.blit(surf, rect)
+        c = (*self.color[:3], alpha) if len(self.color) == 3 else (*self.color[:3], alpha)
+        self._surf.fill(c)
+        rect = self._surf.get_rect(center=(self.pos.x - camera_offset.x, self.pos.y - camera_offset.y))
+        screen.blit(self._surf, rect)
 
 class DustParticle(Particle):
+    def __init__(self, pos, vel, lifetime, color, size, priority=1, gravity=0):
+        super().__init__(pos, vel, lifetime, color, size, priority, gravity)
+        s = max(1, size)
+        self._surf = pygame.Surface((s, s), pygame.SRCALPHA)
+        self._radius = s // 2
+
     def draw(self, screen, camera_offset):
-        radius = self.size / 2
-        center = (int(self.pos.x - camera_offset.x), int(self.pos.y - camera_offset.y))
-        
         alpha = int(max(0, min(255, (self.lifetime / self.max_lifetime) * 255)))
-        surf = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        pygame.draw.circle(surf, (*self.color, alpha) if len(self.color) == 3 else self.color, (int(radius), int(radius)), int(radius))
-        screen.blit(surf, (center[0] - radius, center[1] - radius))
+        self._surf.fill((0, 0, 0, 0))
+        c = (*self.color[:3], alpha)
+        pygame.draw.circle(self._surf, c, (self._radius, self._radius), self._radius)
+        cx = int(self.pos.x - camera_offset.x) - self._radius
+        cy = int(self.pos.y - camera_offset.y) - self._radius
+        screen.blit(self._surf, (cx, cy))
 
 class StarParticle(Particle):
     def draw(self, screen, camera_offset):
@@ -81,25 +90,30 @@ class AfterimageParticle(Particle):
         screen.blit(self.image, (self.pos.x - camera_offset.x, self.pos.y - camera_offset.y))
 
 class SpeedLineParticle(Particle):
+    def __init__(self, pos, vel, lifetime, color, size, priority=1, gravity=0):
+        super().__init__(pos, vel, lifetime, color, size, priority, gravity)
+        self._surf = pygame.Surface((max(1, size * 5), 2), pygame.SRCALPHA)
+
     def draw(self, screen, camera_offset):
-        rect = pygame.Rect(self.pos.x - camera_offset.x, self.pos.y - camera_offset.y, self.size * 5, 2)
         alpha = int(max(0, min(255, (self.lifetime / self.max_lifetime) * 150)))
-        surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(surf, (*self.color, alpha), (0, 0, rect.width, rect.height))
-        screen.blit(surf, rect)
+        self._surf.fill((*self.color[:3], alpha))
+        screen.blit(self._surf, (self.pos.x - camera_offset.x, self.pos.y - camera_offset.y))
 
 class ImpactParticle(Particle):
+    def __init__(self, pos, vel, lifetime, color, size, priority=1, gravity=0):
+        super().__init__(pos, vel, lifetime, color, size, priority, gravity)
+        self._surf = pygame.Surface((max(1, size + 1), max(1, size + 1)), pygame.SRCALPHA)
+
     def draw(self, screen, camera_offset):
         life_pct = self.lifetime / self.max_lifetime
-        size = self.size * life_pct
-        if size <= 0: return
-        rect = pygame.Rect(0, 0, size, size)
-        rect.center = (self.pos.x - camera_offset.x, self.pos.y - camera_offset.y)
-
+        cur_size = self.size * life_pct
+        if cur_size <= 0:
+            return
         alpha = int(max(0, min(255, life_pct * 255)))
-        surf = pygame.Surface((int(size)+1, int(size)+1), pygame.SRCALPHA)
-        pygame.draw.rect(surf, (*self.color, alpha), (0, 0, size, size))
-        screen.blit(surf, rect)
+        self._surf.fill((0, 0, 0, 0))
+        pygame.draw.rect(self._surf, (*self.color[:3], alpha), (0, 0, int(cur_size), int(cur_size)))
+        rect = self._surf.get_rect(center=(self.pos.x - camera_offset.x, self.pos.y - camera_offset.y))
+        screen.blit(self._surf, rect)
 
 class ParticleManager:
     def __init__(self):
@@ -155,7 +169,7 @@ class DamageNumber:
         self.color = color
         self.vel = pygame.math.Vector2(random.uniform(-60, 60), -120)
         self.lifetime = 1.0
-        self.font = pygame.font.SysFont("Arial", size, bold=True)
+        self.font = get_font("Arial", size, bold=True)
 
     def update(self, dt):
         self.pos += self.vel * dt

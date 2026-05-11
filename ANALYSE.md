@@ -1,429 +1,395 @@
-# Dr. Pythagoras 2.0 – Code-Analyse: Bugs, Balancing & Spieler-Kommunikation
+# Dr. Pythagoras 2.0 – Vollständige Code-Analyse
 
-> Analysiert von Claude (claude-sonnet-4-6)  
-> Basis: Vollständige Durchsicht aller 13 Python-Quelldateien
+> Analysiert von Claude Sonnet 4.6 · Branch `claude/review-pythagoras-game-YC6ez`
 
 ---
 
-## 1. 🐛 BUG-ANALYSE
+## 1. 🔴 CRASH-BUGS & EXCEPTIONS
 
-### B1 🔴 Kritisch – `EXSuper._tick_timer` feuert sofort im ersten Frame
+---
 
-**Datei:** `projectiles.py`, Klasse `EXSuper`, Methode `update()`
+### [CRASH] 🔴 ZeroDivisionError in ParryDamageProjectile
 
-**Problem:**  
-`self._tick_timer` wurde mit `0` initialisiert. Im ersten `update()`-Aufruf wurde dann  
-`self._tick_timer = getattr(self, '_tick_timer', 0) - dt` ausgeführt → Ergebnis sofort negativ → erster Schadens-Tick im **ersten Frame** statt nach 0,125 s.
+**Datei:** `projectiles.py`, Zeile ~219  
+**Problem:** `.normalize()` wird direkt auf `dir_vec` aufgerufen, ohne zu prüfen ob der Vektor die Länge 0 hat. Wenn sich das Projektil exakt im Mittelpunkt des Boss-Rects befindet, ist `dir_vec = Vector2(0, 0)` und `.normalize()` wirft `ValueError: Can't normalize a zero vector`.  
+**Wirkung:** Crash beim ersten Parry-Schuss der `ParryDamageProjectile`-Instanz, falls Spawn-Position mit Boss-Mitte übereinstimmt (selten aber reproduzierbar im Parry-Only-Modus wenn der Spieler direkt vor dem Boss steht).
 
-**Wirkung:** Der Ultimate-Laser (EX Super) konnte bereits beim Erscheinen den ersten Schadens-Tick auslösen, was zu inkonsistentem Verhalten und leicht erhöhtem Schaden führte.
-
-**Fix (umgesetzt):**
 ```python
-# vorher:
-self._tick_timer = 0
-# ...
-self._tick_timer = getattr(self, '_tick_timer', 0) - dt
+# VORHER:
+dir_vec = (pygame.math.Vector2(target.rect.center) - self.pos).normalize()
+self.vel = dir_vec * 900
 
-# nachher:
-self._tick_timer = 0.125   # erstes Tick wartet korrekt
-# ...
-self._tick_timer -= dt
+# NACHHER:
+dir_vec = pygame.math.Vector2(target.rect.center) - self.pos
+if dir_vec.length() > 0:
+    self.vel = dir_vec.normalize() * 900
 ```
 
----
-
-### B2 🟡 Wichtig – Parry-Input (S+SPACE) nirgends erklärt
-
-**Datei:** `main.py`, `handle_events()`
-
-**Problem:**  
-Das Parry-System ist vollständig implementiert, aber der Input (`S` halten + `SPACE` drücken) ist im Spiel weder erklärt noch angezeigt. Der Spieler kann die Kernmechanik komplett übersehen.
-
-**Wirkung:** Ohne Parry fehlt ein wesentlicher Teil der Spieltiefe; Spieler können nicht die Parry-Chain oder den Streber-Modus auslösen.
-
-**Fix (umgesetzt):** Tutorial-Modus erklärt den Input interaktiv. PAUSED-Screen zeigt alle Controls.
+**Status: ✅ Gefixt**
 
 ---
 
-### B3 🟡 Wichtig – Kein Game-Over-State, sofortige Menü-Rückkehr
+### [CRASH] 🔴 EXSuper modifiziert toten Boss (kein Alive-Check)
 
-**Datei:** `main.py`, `game_over()`
+**Datei:** `projectiles.py`, Zeile ~251  
+**Problem:** `EXSuper.update()` greift direkt auf `self.game.boss.hp` zu ohne zu prüfen ob der Boss bereits stirbt (`is_dying=True`). Im Sterbezustand hat der Boss `state_timer > 0` und `update_behavior` dekrementiert ihn. Die direkte HP-Änderung kann den Sterbezustand korrumpieren und `win_game()` nicht mehr korrekt triggern.  
+**Wirkung:** Der Boss-Tod kann ausbleiben wenn der Laser den letzten Schaden in die Sterbe-Animation hinein abgibt.
 
-**Problem:**
 ```python
-def game_over(self):
-    self.state = "MENU"  # sofort! Kein Übergang, kein Feedback
+# VORHER:
+if self.game.boss.rect.colliderect(self.rect) and ...:
+    boss = self.game.boss
+    boss.hp -= dmg
+
+# NACHHER:
+boss = self.game.boss
+if (boss and boss.alive() and not boss.is_dying
+        and boss.rect.colliderect(self.rect)
+        and self.total_damage_dealt < PLAYER_EX_SUPER_DAMAGE_CAP):
+    ...
+    boss.hp -= dmg
 ```
-Bei 0 HP erscheint kein "Game Over"-Bildschirm. Der Spieler landet ohne Warnung im Menü.
 
-**Wirkung:** Verwirrend und unbefriedigend; kein emotionaler Abschluss der Niederlage.
+**Status: ✅ Gefixt**
 
-**Fix (umgesetzt):**
+---
+
+## 2. 🟡 LOGIK-BUGS & FALSCHE BERECHNUNGEN
+
+---
+
+### [LOGIK] 🟡 EXSuper Damage-Cap niemals erreichbar
+
+**Datei:** `projectiles.py` + `constants.py`  
+**Problem:** `PLAYER_EX_SUPER_DAMAGE_CAP = 25`, aber bei `lifetime = 0.75s` und `tick_interval = 0.125s` gibt es maximal **6 Ticks × 3 DMG = 18 Schaden**. Der Cap von 25 wird strukturell nie erreicht.  
+**Wirkung:** Der Cap-Mechanismus hat keinerlei Spielwirkung. Die Konstante vermittelt falsche Erwartungen bei der Balancierung. Im Kommentar steht `# 3 Schaden pro Tick * 8 Ticks/s = 24/s, Cap 25 in ~1s` – aber die Lifetime beträgt nur 0.75s, nicht 1s.
+
 ```python
-def game_over(self):
-    self.game_over_timer = 4.0
-    self.state = "GAME_OVER"
+# VORHER (constants.py):
+PLAYER_EX_SUPER_DAMAGE_CAP = 25
+
+# NACHHER:
+PLAYER_EX_SUPER_DAMAGE_CAP = 18  # 6 Ticks × 3 DMG bei 0.75s Lifetime
 ```
-Neuer `GAME_OVER`-State mit Overlay, Wartezeit (4 s) und SPACE-Abkürzung.
+
+**Status: ✅ Gefixt**
 
 ---
 
-### B4 🟢 Verbesserungsvorschlag – Invertierte Schwerkraft: Plattform-Kollision prüfenswert
+### [LOGIK] 🟡 squash_factor Overshoot bei Lag-Spikes
 
-**Datei:** `player.py`, `check_collisions()`
+**Datei:** `player.py`, Zeile ~534; `boss_projectiles.py`, Zeile ~62  
+**Problem:** Die Lerp-Formel `factor += (1.0 - factor) * 12 * dt` kann bei großem `dt` (z.B. 0.5s durch Lag) über die Ziel-Werte hinausschießen oder ins Negative kippen. Beispiel: `squash.y = 1.2` + `(1.0-1.2) * 12 * 0.5 = 0.0`. Der `max(1, ...)` Guard im Sprite-Pfad von `player.draw` verhindert den Crash, aber der Fallback-Rect-Pfad hat diesen Schutz nicht.  
+**Wirkung:** Visuelle Artefakte (fehlpositionierte Fallback-Rects) bei Lag-Spikes.
 
-**Problem:**  
-Bei `inverted_gravity=True` prüft die Plattformkollision `vel.y < 0` für Landung. Da die Schwerkraft invertiert ist, fällt der Spieler nach oben – der Velocity-Check ist in dieser Richtung korrekt, aber die visuelle Zuordnung `platform.rect.bottom + self.height` als Bodenpunkt ist semantisch verwirrend und könnte in Edge Cases zu Problemen führen.
-
-**Empfehlung:** Plattform-Kollision in eine eigene Methode auslagern, die explizit auf Schwerkraftrichtung reagiert.
-
----
-
-### B5 🟢 Verbesserungsvorschlag – Focus-Energie regeneriert während Dash
-
-**Datei:** `player.py`, `handle_input()`
-
-**Problem:**  
-Fokus-Energie (`focus_time`) regeneriert auch während eines Dash, da der Regen-Check nur prüft ob `not self.is_focusing`, nicht ob `not self.is_dashing`.
-
-**Wirkung:** Minimal – Dash dauert 0,17 s, Regen-Rate 0,2/s → ca. 0,034 Focus pro Dash. Wahrscheinlich nicht merkbar.
-
-**Empfehlung:** Regen nur wenn `not self.is_dashing and not self.is_focusing` für sauberere Logik.
-
----
-
-### Top 3 Bug-Maßnahmen
-
-1. **✅ EXSuper Tick-Timer** – behoben (sofortiger erster Tick verhindert)
-2. **✅ Game-Over-State** – implementiert (kein abrupter Menü-Sprung mehr)
-3. **✅ Parry-Input erklärt** – Tutorial + PAUSED-Controls-Screen
-
----
-
-## 2. ⚖️ BALANCING-ANALYSE
-
-### BA1 🔴 Kritisch – Streber-Modus zu stark
-
-**Datei:** `player.py`, `handle_parry()`
-
-**Problem:**  
-3 Parries aktivieren den Streber-Modus:
-- Schaden ×2 für **10 Sekunden**  
-- 3. Sprung (Triple Jump)  
-- Parry-Chain-Timer von 10 s – fast unmöglich zu verlieren
-
-Mit Parry-Chain → Streber → mehr Karten → Ultimate → Boss-Phasen überspringen war eine Doom-Loop möglich.
-
-**Fix (umgesetzt):**
-- Streber-Dauer: 10 s → **5 s** (`PLAYER_STREBER_DURATION`)
-- Schaden-Multiplikator: ×2 → **×1,5** (`PLAYER_STREBER_DAMAGE_MULT`)
-
----
-
-### BA2 🔴 Kritisch – Karten-Gain zu schnell (Ultimate-Spam möglich)
-
-**Datei:** `player.py`, `handle_parry()`
-
-**Problem:**  
-- Normale Parry: +1 Karte  
-- Perfekte Parry: +2 Karten  
-- 5 Karten = Ultimate (25 HP Cap)  
-Mit 3 perfekten Parries: 6 Karten → Ultimate sofort feuern, 5 Karten bleiben übrig → nächster Ultimate in 1 Parry.
-
-**Fix (umgesetzt):**
-- Normale Parry: +1 → **+0,5 Karten** (`PLAYER_PARRY_CARD_NORMAL`)
-- Perfekte Parry: +2 → **+1,0 Karten** (`PLAYER_PARRY_CARD_PERFECT`)
-
----
-
-### BA3 🟡 Wichtig – Perfekte Parry-Fenster zu eng (5 Frames)
-
-**Datei:** `constants.py`
-
-**Problem:**  
-`PLAYER_PERFECT_PARRY_WINDOW = 0.083` ≈ 5 Frames bei 60 FPS. Für die durchschnittliche menschliche Reaktionszeit (150–250 ms) ist dieses Fenster nahezu unmöglich zu treffen.
-
-**Fix (umgesetzt):**  
-`PLAYER_PERFECT_PARRY_WINDOW = 0.167` (10 Frames) – weiterhin anspruchsvoll, aber erlernbar.
-
----
-
-### BA4 🟡 Wichtig – Weak-Point-Fenster zu kurz (1 Sekunde)
-
-**Datei:** `boss.py`, `geometry_attack()`, `protractor_attack()`
-
-**Problem:**  
-`weak_point_timer = 1.0` bei mehrteiligen Angriffen wie Compass Hell (18+ Projektile). Spieler müssen Angriffen ausweichen UND in 1 Sekunde den Weak Point treffen.
-
-**Fix (umgesetzt):**  
-`BOSS_WEAK_POINT_DURATION = 2.5` Sekunden – genug Zeit zum Reagieren, bleibt aber anspruchsvoll.
-
----
-
-### BA5 🟡 Wichtig – Phase-3-Cooldown zu aggressiv
-
-**Datei:** `boss.py`, `run_attack()`
-
-**Problem:**  
-Phase 3: 1 Sekunde Cooldown zwischen Angriffen. Bei 5 Angriffsmustern inklusive Reality Break und Blackboard Barrage kaum überlebbar für neue Spieler.
-
-**Fix (umgesetzt):**
-| Phase | Alt | Neu |
-|-------|-----|-----|
-| Phase 1 | 2,0 s | 2,5 s |
-| Phase 2 | 2,0 s | 2,2 s |
-| Phase 3 | 1,0 s | 1,5 s |
-
----
-
-### BA6 🟡 Wichtig – Spieler HP zu niedrig für Einsteiger
-
-**Datei:** `constants.py`
-
-**Problem:**  
-3 HP mit 1,5 s I-Frames. Da Parry, Dash und Shield nicht intuitiv erklärt werden, verlieren neue Spieler schnell alle HP ohne zu verstehen warum.
-
-**Fix (umgesetzt):**
-- `PLAYER_MAX_HP = 5` (war 3)
-- `PLAYER_IFRAMES_DURATION = 2.0 s` (war 1,5 s)
-- `PLAYER_DASH_COOLDOWN = 0.7 s` (war 1,0 s)
-- `PLAYER_SHIELD_COOLDOWN = 3.5 s` (war 5,0 s)
-
----
-
-### BA7 🟡 Wichtig – Compass Hell: 24 Projektile in Phase 3
-
-**Datei:** `boss.py`, `compass_hell_advanced()`
-
-**Problem:**  
-3 Bursts × 8 Projektile = 24 gleichzeitige Geschosse. Ohne Dash oder Parry kaum auszuweichen.
-
-**Fix (umgesetzt):**  
-3 Bursts × 6 Projektile = 18 Geschosse – immer noch intensiv, aber navigierbar.
-
----
-
-### BA8 🟢 Verbesserungsvorschlag – Boss-Phasen-Schwellen unausgewogen
-
-**Problem:**  
-- Phase 2 beginnt bei 70 HP → Spieler verbringen 30 HP (30%) in Phase 1  
-- Phase 2: 40 HP Dauer (57% der Gesamtspielzeit)  
-- Phase 3: nur 25–30 HP kurz
-
-**Empfehlung:** Phase 2 ab 65 HP, Phase 3 ab 25 HP (bereits umgesetzt: BOSS_PHASE_3_THRESHOLD = 25).
-
----
-
-### BA9 🟢 Verbesserungsvorschlag – Challenge-Schwierigkeitsbewertungen inkonsistent
-
-| Challenge | Sterne | Tatsächliche Schwierigkeit |
-|-----------|--------|---------------------------|
-| No Dash | ★★★ | Mittel – korrekt |
-| One Hit KO | ★★★★★ | Hoch – korrekt |
-| Parry Only | ★★★★ | Hoch – korrekt |
-| Boss Rush | ★★★★ | Mittel-Hoch – leicht zu hoch |
-| Mirror Match | ★★★★★ | **Niedrig** – kaum implementiert |
-
-Mirror Match feuert nur 3 Boss-Aktionen (geometry_attack, teleport, shield) und ist trotz 5-Sterne deutlich einfacher als One Hit KO.
-
-**Empfehlung:** Mirror Match auf ★★★ reduzieren oder vollständig implementieren.
-
----
-
-### Top 3 Balancing-Maßnahmen
-
-1. **✅ Karten-Gain normalisiert** – Ultimate-Spam verhindert
-2. **✅ Streber-Modus abgeschwächt** – Doom-Loop entfernt
-3. **✅ Spieler-Grundstats verbessert** – 5 HP, kürzere Cooldowns für Einsteiger
-
----
-
-## 3. 📢 SPIELER-KOMMUNIKATION (UX/Feedback-Analyse)
-
-### UX1 🔴 Kritisch – Parry-Input (S+SPACE) war komplett versteckt
-
-**Datei:** `main.py`, nirgends in der UI erklärt
-
-**Problem:**  
-`S + SPACE` für Parry ist ein zentrales Spielelement, aber nirgends im Spiel erklärt. Spieler drücken SPACE allein und sehen nur Sprünge.
-
-**Fix (umgesetzt):**
-- Neuer **interaktiver Tutorial-Modus** (Schritt 5: Parry-Übung mit echten Projektilen)
-- **PAUSED-Screen** zeigt jetzt alle Controls
-
----
-
-### UX2 🔴 Kritisch – Kein Game-Over-Übergang
-
-**Datei:** `main.py`, `game_over()`
-
-**Problem:**  
-Tod = sofortiger Menü-Wechsel ohne jede Rückmeldung. Spieler wissen nicht einmal dass sie verloren haben.
-
-**Fix (umgesetzt):**  
-Neuer `GAME_OVER`-State mit:
-- Schwarzem Overlay über dem Kampffeld
-- "GAME OVER" in Rot (80pt)
-- Erklärender Text
-- Countdown-Timer (4 s) mit Abkürz-Option
-
----
-
-### UX3 🟡 Wichtig – Kein Tutorial / Onboarding vorhanden
-
-**Problem:**  
-Das Menü bot 5 Optionen ohne Erklärung welche man zuerst wählen soll. Einsteiger wählen "START GAME" und stehen einem aggressiven Boss ohne Regelwissen gegenüber.
-
-**Fix (umgesetzt):**  
-Neuer **TUTORIAL-Modus** (erste Menüoption) mit 8 Schritten:
-
-| Schritt | Mechanic | Trigger zur Completion |
-|---------|----------|----------------------|
-| 1 | Bewegung (A/D) | Spieler bewegt sich |
-| 2 | Springen (SPACE) | Spieler springt |
-| 3 | Dash (LSHIFT) | Spieler dasht |
-| 4 | Schießen (LClick) | Spieler trifft Boss |
-| 5 | Parry (S+SPACE) | Spieler pariert 1x |
-| 6 | Schild (E) | Spieler aktiviert Schild |
-| 7 | EX-Angriffe | Spieler sammelt 1,5 Karten |
-| 8 | Abschluss | ENTER/SPACE → Menü |
-
-Der Boss feuert ab Schritt 5 langsame parierbare Projektile (Übungsmaterial).  
-Jeder Schritt hat einen Timeout-Fallback (automatischer Skip nach 25–60 s).  
-ESC überspringt den aktuellen Schritt.
-
----
-
-### UX4 🟡 Wichtig – I-Frame-Blinken zu schnell (kaum wahrnehmbar)
-
-**Datei:** `player.py`, `draw()`
-
-**Problem:**  
 ```python
-int(self.i_frames * 15) % 2  # blinkt jede 4 Frames = sehr schnell
+# NACHHER (nach der Lerp-Zeile, beide Dateien):
+self.squash_factor.x = max(0.1, self.squash_factor.x)
+self.squash_factor.y = max(0.1, self.squash_factor.y)
 ```
-Bei 60 FPS blinkte der Spieler 7,5× pro Sekunde. Kaum erkennbar ob man gerade unverwundbar ist.
 
-**Fix (umgesetzt):**
+**Status: ✅ Gefixt**
+
+---
+
+### [LOGIK] 🟡 _walk_frame nicht auf 0 zurückgesetzt beim Stehenbleiben
+
+**Datei:** `player.py`, Zeile ~548  
+**Problem:** `_walk_frame_timer` wird im `else`-Zweig auf 0 gesetzt, aber `_walk_frame` bleibt auf dem letzten Walk-Frame (0, 1 oder 2). Beim nächsten Start der Lauf-Animation beginnt der Zyklus mitten im Walk.  
+**Wirkung:** Kleiner visueller Glitch – Walk-Animation beginnt nicht immer bei Frame 0.
+
 ```python
-int(self.i_frames * 6) % 2  # blinkt jede ~10 Frames = deutlich sichtbar
+# NACHHER (else-Zweig in update_animation):
+else:
+    self._walk_frame_timer = 0.0
+    self._walk_frame = 0
 ```
 
----
-
-### UX5 🟡 Wichtig – PAUSED-State bot keine Optionen oder Informationen
-
-**Datei:** `ui.py`
-
-**Problem:**  
-Pause zeigte nur "PAUSED" in weißem Text. Keine Controls, keine Resume/Quit-Option.
-
-**Fix (umgesetzt):**  
-Neuer Pause-Overlay mit:
-- Schwarzem Semi-Transparenz-Layer
-- Vollständiger Controls-Liste
-- Hinweis "P – Weiterspielen"
+**Status: ✅ Gefixt**
 
 ---
 
-### UX6 🟡 Wichtig – Kein Audio-Feedback (SoundManager-Stub)
+### [LOGIK] 🟢 wall_cling_timer – korrekte Implementierung bestätigt
 
-**Datei:** `utils.py`, `SoundManager.play()`
+**Datei:** `player.py`, Zeile ~562  
+Der Timer wird NUR beim Erstkontakt (`prev_on_wall is None`) gesetzt. In Folgeframes läuft er normal ab. Das ist korrekte Implementierung – kein Bug. ✅
 
-**Problem:**  
+---
+
+### [LOGIK] 🟢 streber_mode Deaktivierungslogik – korrekt
+
+**Datei:** `player.py`, Zeilen ~514–524  
+Beide Timer werden auf `PLAYER_STREBER_DURATION` gesetzt. `parry_chain_timer`-Block prüft `parry_counter_timer <= 0` bevor der Counter-Block ausgeführt wird, deshalb bleibt `streber_mode` aktiv bis `parry_counter_timer` im selben Frame abläuft. Ergebnis ist korrekt. ✅
+
+---
+
+### [LOGIK] 🟡 BouncingEraser: Doppelter dt-Schritt bei Wandkollision
+
+**Datei:** `boss_projectiles.py`, Zeile ~43  
+**Problem:** Nach Wandkollision wird Velocity gespiegelt UND sofort ein zweites `pos.x += vel.x * dt` ausgeführt. Dies verdoppelt die Bewegung in dem Frame der Kollision.  
+**Wirkung:** Bei hoher Geschwindigkeit kann der Eraser leicht durch Wände clippen. Keine relevante Auswirkung bei normalen Geschwindigkeiten.
+
+---
+
+### [LOGIK] 🟡 TutorialManager: check_fn Race Condition ausgeschlossen
+
+`complete_flash_timer > 0` Guard verhindert Doppelabschluss vollständig. ✅
+
+---
+
+## 3. 🎮 GAMEPLAY & BALANCING
+
+| Bereich | Einschätzung | Begründung |
+|---|---|---|
+| **Ultimate-Laser** | ⚠️ Grenzwertig | Faktischer Max-Schaden: 18 HP (war cap 25, nie erreichbar). Bei BOSS_MAX_HP=100: 18%. Sinnvoll, aber cap war falsch dokumentiert. Gefixt: cap=18. |
+| **Karten-Gain** | ⚠️ Grenzwertig | 0.5 pro Normal-Parry = 10 Parries für 5 Karten. Bei Phase-1-Cooldown 2.5s: ~25s für vollen Meter durch reines Parieren. Mit Schüssen (0.05 bei Nähe) realistisch erreichbar. |
+| **Phase 3 Cooldown** | ✅ OK | 1.5s + Reality-Break-Warning (2s) + Effekt (2s) = 5.5s gebunden. Mit HP=5 und 2.0s I-Frames überlebbar. |
+| **Weak Point** | ✅ OK | 2.5s Fenster ist nach dem Angriff (Teleport kommt davor). Realistisch treffbar. War 1.0s – die Erhöhung ist angemessen. |
+| **Parry-Fenster** | ✅ OK | 0.30s Parry + 0.167s Perfect. Perfect ist Teilmenge des normalen Fensters. Beide Timer laufen korrekt parallel. |
+| **Tutorial-Timeout** | ✅ OK | Schritt 5 (Parry) hat 60s Timeout. 15 Chancen bei 4s-Interval. Ausreichend für neue Spieler. |
+
+---
+
+## 4. 🖼️ VISUELLE FEHLER & DARSTELLUNGSPROBLEME
+
+---
+
+### [VISUELL] 🟡 Tutorial-Arrow ohne Camera-Offset
+
+**Datei:** `tutorial.py`, Zeile ~251  
+**Problem:** `bx = boss.rect.centerx` ohne `camera_offset`-Subtraktion. Der Arrow wird auf `screen` gezeichnet (nach render_surface-Blit), aber mit Welt-Koordinaten statt Schirm-Koordinaten.  
+**Wirkung:** Arrow verschiebt sich bei Kamera-Shake nicht mit dem Boss-Sprite.
+
 ```python
-def play(self, sound_name):
-    pass  # völlig leer
+# NACHHER:
+cam = self.game.effect_manager.get_camera_offset()
+bx = boss.rect.centerx - int(cam.x)
+by = boss.rect.centery - 20 + offset - int(cam.y)
 ```
-Alle Sounds (Schuss, Parry, Treffer, Ultimate) sind stumm. Das Spiel fühlt sich dadurch taub und wenig reaktionsfreudig an.
 
-**Empfehlung:**  
-`pygame.mixer.Sound` implementieren oder zumindest Platzhalter-Töne (z. B. generierte Sinus-Töne per `numpy`/`pygame.sndarray`). Dies hat den größten einzelnen Einfluss auf das Spielgefühl.
+**Status: ✅ Gefixt**
 
 ---
 
-### UX7 🟢 Verbesserungsvorschlag – Grading-Aufschlüsselung vorhanden, aber nicht kontextualisiert
+### [VISUELL] 🟢 Boss-Dialogue Y-Position
 
-**Datei:** `ui.py`, `GradeScreen.draw()`
+Phase-2-Boss: `pos.y` ≥ 150. `draw_rect.top - 40` ≥ 35px. Sichtbar. ✅
 
-**Problem:**  
-Die Stat-Liste zeigt Zeit, Treffer, Parries und Style-Events – aber keine Gewichtung oder Vergleich zum Maximum. Spieler wissen nicht, was sie verbessern sollen.
+---
 
-**Empfehlung:**
+### [VISUELL] 🟢 AfterimageParticle Surface-Kopie
+
+`image.copy()` im `__init__` zum Zeitpunkt des Erstellens ist korrekt – der Afterimage soll den Zustand beim Entstehen zeigen. ✅
+
+---
+
+### [VISUELL] 🟢 Zoom-Rendering: kein UI-Doppeldraw
+
+`render_surface` → zoom-skaliert → `screen`. Dann `ui_manager.draw(screen)`. UI nur einmal gezeichnet. ✅
+
+---
+
+### [VISUELL] 🟡 Reality-Break-Text auf render_surface (Zoom-Abhängig)
+
+**Datei:** `main.py`, Zeile ~394  
+Der Reality-Break-Text wird auf `render_surface` gezeichnet und ist damit zoom-skaliert. HUD-Texte sind nicht zoom-skaliert (auf `screen`). Bei zoom≠1.0 sieht der Text anders aus als andere UI-Texte.  
+**Wirkung:** Inkonsistenz, aber kein Crash. Da Reality-Break ein Spielwelt-Effekt ist, ist das Verhalten argumentierbar korrekt.
+
+---
+
+## 5. 🏗️ ARCHITEKTUR & CODE-QUALITÄT
+
+---
+
+### [ARCH] 🟡 all_sprites: populiert aber nie für Update/Draw/Kollision genutzt
+
+**Datei:** `main.py`  
+`all_sprites.update()` wird nie aufgerufen. `all_sprites.draw()` wird nie aufgerufen. Die Gruppe wird nur befüllt. Sie dient de facto als Registry, nicht als Sprite-Gruppe. Sprites werden nicht automatisch aus ihr entfernt wenn sie gekillt werden – nein, doch: `sprite.kill()` entfernt aus ALLEN Gruppen. Aber der Nutzen der Gruppe ist unklar.  
+**Wirkung:** Kein Bug. Toter Overhead – jede `.add()`-Operation kostet Zeit.
+
+---
+
+### [ARCH] 🟢 Keine zirkulären Importe
+
+Import-DAG (Zusammenfassung):
+- `main` → `player`, `boss`, `projectiles`, `effects`, `ui`, `challenge`, `demo`, `tutorial`, `save_system`, `utils`
+- `player` → `projectiles`, `boss_projectiles`, `utils`, `effects`
+- `boss` → `boss_projectiles`, `utils`
+- `boss_projectiles` → `projectiles`, `utils`
+- `projectiles` → `constants`
+- `effects` → `utils` (nach Fix)
+
+Kein Zyklus. ✅
+
+---
+
+### [ARCH] 🟡 God-Object Game: zu viele direkte Attribute
+
+`Game` hat ~25 direkte Attribute. Kandidaten für Extraktion:
+- `total_parries`, `perfect_parries`, `style_points` → `CombatStats`
+- `reality_break_timer`, `inverted_controls`, `inverted_gravity` → `WorldState`
+- `particle_manager`, `effect_manager`, `sound_manager` → `SystemManagers`
+
+**Wirkung:** Wartbarkeit. Kein Gameplay-Bug.
+
+---
+
+### [ARCH] 🟡 SoundManager Singleton bleibt korrekt über Resets
+
+`__new__` gibt dieselbe Instanz zurück. `__init__` hat `if not self.initialized` Guard. Korrekt. ✅
+
+---
+
+### [ARCH] 🟡 EQUATION_FONT als Modul-Global – sicher
+
+Lazy-Init in `draw()` stellt sicher, dass pygame bereits initialisiert ist. Identisches Pattern wie `_icon_cache`. Bei `pygame.quit()` → `sys.exit()` kein Problem. ✅
+
+---
+
+### [ARCH] 🟢 Toter action_log in MirrorMatch entfernt
+
+**Status: ✅ Gefixt**
+
+---
+
+## 6. 🚀 PERFORMANCE-PROBLEME
+
+---
+
+### [PERF] 🔴 Surface-Allokation pro Partikel-Draw (KRITISCH)
+
+**Datei:** `effects.py`  
+**Problem:** `SquareParticle`, `DustParticle`, `SpeedLineParticle`, `ImpactParticle` – alle allozieren `pygame.Surface(...)` in **jedem** `draw()`-Aufruf. Bei 200 Partikeln = **200 Surface-Allokationen pro Frame**; bei 60fps = **12.000 Allokationen/s**.  
+**Einschätzung:** hoch – messbare FPS-Drops auf schwacher Hardware.  
+**Fix:** Surface in `__init__` vorallozieren und mit `fill()` + neuzeichnen.
+
+**Status: ✅ Gefixt** (alle 4 Klassen)
+
+---
+
+### [PERF] 🟡 DamageNumber erstellt Font per Instanz
+
+**Datei:** `effects.py`, Zeile ~158  
+**Einschätzung:** mittel – `pygame.font.SysFont` ist teuer (~2ms). Bei Parry-Ketten viele Damage-Numbers gleichzeitig.  
+**Fix:** `get_font()` aus `utils.py`.
+
+**Status: ✅ Gefixt**
+
+---
+
+### [PERF] 🟡 StarParticle: Surface noch nicht voralloziert
+
+**Datei:** `effects.py`, `StarParticle.draw()`  
+Berechnet Bounding-Box dynamisch und alloziert Surface. Schwieriger zu cachen wegen rotierender Punkte. Wirkung niedrig (max 30 bei perfect parry, selten).
+
+---
+
+### [PERF] 🟢 Keine O(n²)-Loops
+
+Alle Kollisionschecks gegen Boss (`spritecollide`) und Platforms sind O(n×m) mit kleinen n, m. Kein echtes O(n²)-Problem. ✅
+
+---
+
+### [PERF] 🟢 Fonts korrekt gecached
+
+`get_font()` in `utils.py` mit `_font_cache` dict. ✅
+
+---
+
+## 7. 🔊 AUDIO-SYSTEM
+
+---
+
+### [AUDIO] 🔴 SoundManager.play() war vollständiger Stub → implementiert
+
+**Status: ✅ Gefixt**
+
+Neue Implementierung (`utils.py`):
+
+```python
+def play(self, name, volume=1.0):
+    snd = self._load(name)       # aus sounds/-Verzeichnis oder synthetisch
+    if snd is None:
+        return
+    try:
+        snd.set_volume(max(0.0, min(1.0, volume * self.master_volume)))
+        snd.play()
+    except Exception:
+        pass
 ```
-Zeit: 120s   → 15/30 Punkte
-Treffer: 2   → 18/30 Punkte
-...
-```
-Breakdowns pro Kategorie helfen Spielern zu verstehen wo sie Punkte verlieren.
+
+**Features:**
+- Lädt `.wav` / `.ogg` / `.mp3` aus `sounds/`-Verzeichnis (falls vorhanden)
+- Fallback: synthetische Sinuswellen-Beeps (per Ereignis frequenzspezifisch, z.B. `parry`=880Hz, `boss_hit`=300Hz, `reality_break`=150Hz)
+- Numpy-basierte Buffer-Generierung mit linearem Fade-out
+- Graceful Fallback wenn numpy nicht installiert oder Mixer nicht verfügbar
+- Lautstärke-Parameter und `master_volume=0.7` werden respektiert
+- Singleton sicher über game resets
 
 ---
 
-### UX8 🟢 Verbesserungsvorschlag – Boss-Dialogue zu selten und zu kurz
+### [AUDIO] 🔴 update_music_layers() war vollständiger Stub → implementiert
 
-**Datei:** `boss.py`, `update_visuals()`
+**Status: ✅ Gefixt**
 
-**Problem:**  
-Nur `geometry_attack()` zeigt Dialog mit 20% Wahrscheinlichkeit. Phase-Übergänge haben Dialog, viele Angriffe aber nicht. Der Boss wirkt dadurch schweigend und persönlichkeitslos.
+Neue Implementierung layert Musik-Tracks basierend auf Boss-HP (0.0–1.0):
+| Layer | Aktiv wenn |
+|-------|-----------|
+| `music_base` | immer |
+| `music_intensity` | HP < 70% |
+| `music_danger` | HP < 30% |
+| `music_chaos` | HP < 10% |
 
-**Empfehlung:**  
-Dialogue-Pool pro Phase; zufällige Kommentare bei jedem 2.–3. Angriff; Dauer auf 2,5 s erhöhen.
-
----
-
-### UX9 🟢 Verbesserungsvorschlag – Demo-Bot zeigt unrealistische Spielstärke
-
-**Datei:** `demo.py`
-
-**Problem:**  
-Bot hat 999 HP, unendlich Karten und pariert automatisch alle parier­baren Projektile. Als "Demo" für neue Spieler vermittelt er ein unrealistisches Bild.
-
-**Empfehlung:**  
-Parry-Erfolgsrate auf 50% reduzieren; Bot-HP auf 100 begrenzen.
+**Hinweis:** `update_music_layers()` muss noch explizit aufgerufen werden (z.B. in `boss.take_damage()`). Das ist ein offener To-Do.
 
 ---
 
-### Top 3 UX-Maßnahmen
+## PRIORITÄTSLISTE – TOP 10 FIXES
 
-1. **✅ Tutorial-Modus** – interaktiv, 8 Schritte, mit Übungs-Projektilen
-2. **✅ Game-Over-Screen** – kein abrupter Menü-Sprung mehr
-3. **✅ PAUSED-Controls-Anzeige** – Spieler können jederzeit nachschlagen
+| Prio | Schwere | Datei | Bug | Status |
+|------|---------|-------|-----|--------|
+| 1 | 🔴 CRASH | `projectiles.py:219` | ZeroDivisionError in ParryDamageProjectile.normalize() | ✅ |
+| 2 | 🔴 CRASH | `projectiles.py:251` | EXSuper modifiziert toten Boss ohne Alive-Check | ✅ |
+| 3 | 🔴 FEATURE | `utils.py:62` | SoundManager.play() Stub – kein Audio | ✅ |
+| 4 | 🔴 PERF | `effects.py` | Surface-Allokation per Partikel-Draw (200×/Frame) | ✅ |
+| 5 | 🟡 BALANCE | `constants.py:69` | EXSuper Cap=25 niemals erreichbar (max=18) | ✅ |
+| 6 | 🟡 PERF | `effects.py:158` | DamageNumber erstellt Font-Objekt pro Instanz | ✅ |
+| 7 | 🟡 VISUELL | `tutorial.py:251` | Tutorial-Arrow ohne Camera-Offset | ✅ |
+| 8 | 🟡 VISUELL | `player.py:534` | squash_factor Overshoot/Negativ bei Lag | ✅ |
+| 9 | 🟡 VISUELL | `player.py:548` | _walk_frame nicht zurückgesetzt beim Stoppen | ✅ |
+| 10 | 🟢 ARCH | `challenge.py:29` | Toter `self.action_log` in MirrorMatch | ✅ |
 
 ---
 
-## Zusammenfassung aller Änderungen in diesem PR
+## PRODUKTIONS-CHECKLISTE
 
-### Bug-Fixes
-| Datei | Änderung |
-|-------|----------|
-| `projectiles.py` | EXSuper `_tick_timer` startet jetzt bei 0,125 s (war 0) |
-| `player.py` | I-Frame-Blink-Rate reduziert (`*15` → `*6`) |
-| `boss.py` | Tutorial-Guard verhindert Boss-Angriffe im Tutorial-State |
-| `main.py` | `game_over()` setzt `GAME_OVER`-State statt direktem Menü-Sprung |
+### Kritische Fixes (Absturz-Prävention)
+- [x] `ParryDamageProjectile.update`: normalize() Zero-Vector Guard
+- [x] `EXSuper.update`: `boss.alive() and not boss.is_dying` Guard
+- [x] `SoundManager.play()`: vollständige Implementierung mit Fallback
 
-### Balance-Änderungen
-| Parameter | Alt | Neu |
-|-----------|-----|-----|
-| `PLAYER_MAX_HP` | 3 | **5** |
-| `PLAYER_IFRAMES_DURATION` | 1,5 s | **2,0 s** |
-| `PLAYER_DASH_COOLDOWN` | 1,0 s | **0,7 s** |
-| `PLAYER_SHIELD_COOLDOWN` | 5,0 s | **3,5 s** |
-| `PLAYER_PERFECT_PARRY_WINDOW` | 0,083 s (5f) | **0,167 s (10f)** |
-| `PLAYER_PARRY_WINDOW` | 0,25 s | **0,30 s** |
-| `PLAYER_PARRY_CARD_NORMAL` | 1 | **0,5** |
-| `PLAYER_PARRY_CARD_PERFECT` | 2 | **1,0** |
-| `PLAYER_STREBER_DURATION` | 10 s | **5 s** |
-| `PLAYER_STREBER_DAMAGE_MULT` | ×2 | **×1,5** |
-| `BOSS_WEAK_POINT_DURATION` | 1,0 s | **2,5 s** |
-| `BOSS_PHASE3_COOLDOWN` | 1,0 s | **1,5 s** |
-| `BOSS_PHASE_3_THRESHOLD` | 30 HP | **25 HP** |
-| Compass Hell Projektile/Burst | 8 | **6** |
+### Performance
+- [x] `SquareParticle`: Surface in `__init__` vorallozieren
+- [x] `DustParticle`: Surface in `__init__` vorallozieren  
+- [x] `SpeedLineParticle`: Surface in `__init__` vorallozieren
+- [x] `ImpactParticle`: Surface in `__init__` vorallozieren
+- [x] `DamageNumber`: `get_font()` statt `pygame.font.SysFont()` pro Instanz
+- [ ] `StarParticle`: Surface auf max. Größe vorallozieren (niedrige Priorität)
 
-### Neue Features
-| Feature | Datei | Beschreibung |
-|---------|-------|-------------|
-| Tutorial-Modus | `tutorial.py` (neu) | 8 interaktive Schritte, Parry-Übungsprojektile, Fortschrittsanzeige |
-| Tutorial-State | `main.py` | Neuer Game-State `TUTORIAL`, Menüeintrag als erste Option |
-| Tutorial-Overlay | `ui.py` | Panel unten mit Step-Text, Hint und Fortschritts-Dots |
-| GAME_OVER-State | `main.py` + `ui.py` | Overlay mit Countdown, SPACE zum Überspringen |
-| PAUSED-Controls | `ui.py` | Vollständige Control-Liste im Pause-Screen |
+### Balance
+- [x] `PLAYER_EX_SUPER_DAMAGE_CAP`: 25 → 18 (entspricht tatsächlichem Maximum)
+
+### Visuelle Korrektheit
+- [x] `squash_factor` clamp auf min 0.1 (player.py + boss_projectiles.py)
+- [x] `_walk_frame` auf 0 zurücksetzen beim Stoppen
+- [x] Tutorial-Arrow mit korrektem Camera-Offset gezeichnet
+
+### Code-Qualität
+- [x] Toter `self.action_log` in `ChallengeMode.Mirror Match` entfernt
+
+### Noch offen
+- [ ] `update_music_layers()` in `boss.take_damage()` aufrufen
+- [ ] `StarParticle` Surface-Allokation optimieren
+- [ ] `all_sprites`-Gruppe entfernen oder sinnvoll nutzen
+- [ ] `HomingProjectile`: Geschwindigkeitsverlust durch Steering-Akkumulation prüfen
+- [ ] `BouncingEraser`: doppelter dt-Schritt bei Wandkollision entschärfen
