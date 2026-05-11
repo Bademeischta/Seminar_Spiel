@@ -1,7 +1,21 @@
 import pygame
 import math
 import random
+import os
 from constants import *
+
+_icon_cache = {}
+
+def _get_icon(filename, size):
+    key = (filename, size)
+    if key not in _icon_cache:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', 'icons', filename)
+        try:
+            _icon_cache[key] = pygame.transform.scale(
+                pygame.image.load(path).convert_alpha(), size)
+        except Exception:
+            _icon_cache[key] = None
+    return _icon_cache[key]
 
 class BaseProjectile(pygame.sprite.Sprite):
     def __init__(self, game, x, y, vel_x, vel_y, damage, color=COLOR_BLUE, size=(10, 10)):
@@ -112,33 +126,65 @@ class EXFlieger(PlayerProjectile):
 
     def draw(self, screen, camera_offset):
         center = (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y)
-        angle = math.degrees(math.atan2(self.vel.y, self.vel.x))
-        
-        tip = (center[0] + math.cos(math.radians(angle)) * 20, center[1] + math.sin(math.radians(angle)) * 20)
-        back = (center[0] - math.cos(math.radians(angle)) * 20, center[1] - math.sin(math.radians(angle)) * 20)
-        wing1 = (back[0] + math.cos(math.radians(angle + 90)) * 10, back[1] + math.sin(math.radians(angle + 90)) * 10)
-        wing2 = (back[0] + math.cos(math.radians(angle - 90)) * 10, back[1] + math.sin(math.radians(angle - 90)) * 10)
-        
-        pygame.draw.polygon(screen, self.color, [tip, wing1, wing2])
+        icon = _get_icon('Stift 1.png', (40, 40))
+        if icon:
+            angle = -math.degrees(math.atan2(self.vel.y, self.vel.x))
+            rotated = pygame.transform.rotate(icon, angle)
+            screen.blit(rotated, rotated.get_rect(center=center))
+        else:
+            angle_rad = math.atan2(self.vel.y, self.vel.x)
+            cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+            tip   = (center[0] + cos_a * 20,           center[1] + sin_a * 20)
+            back  = (center[0] - cos_a * 20,           center[1] - sin_a * 20)
+            wing1 = (back[0]  - sin_a * 10,            back[1]  + cos_a * 10)
+            wing2 = (back[0]  + sin_a * 10,            back[1]  - cos_a * 10)
+            pygame.draw.polygon(screen, self.color, [tip, wing1, wing2])
 
 class EXEraser(PlayerProjectile):
     def __init__(self, game, x, y, direction):
-        super().__init__(game, x, y, direction * 300, 0, 3, COLOR_PURPLE, (20, 20), is_ex=True)
+        super().__init__(game, x, y, direction * 300, 0, 3, COLOR_PURPLE, (30, 30), is_ex=True)
+
+    def draw(self, screen, camera_offset):
+        center = (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y)
+        icon = _get_icon('Rauchverbot.png', (30, 30))
+        if icon:
+            rotated = pygame.transform.rotate(icon, self.angle_rot)
+            screen.blit(rotated, rotated.get_rect(center=center))
+        else:
+            draw_rect = self.rect.copy()
+            draw_rect.x -= camera_offset.x
+            draw_rect.y -= camera_offset.y
+            pygame.draw.rect(screen, self.color, draw_rect)
 
     def kill(self):
         self.game.particle_manager.spawn_hit(self.rect.center, color=COLOR_PURPLE)
-        explosion_rect = pygame.Rect(0, 0, 200, 200)
-        explosion_rect.center = self.rect.center
-        if explosion_rect.colliderect(self.game.boss.rect):
-             self.game.boss.take_damage(3)
+        boss = self.game.boss
+        if boss and boss.alive():
+            explosion_rect = pygame.Rect(0, 0, 200, 200)
+            explosion_rect.center = self.rect.center
+            if explosion_rect.colliderect(boss.rect):
+                boss.take_damage(3)
         super().kill()
 
 class EXRuler(PlayerProjectile):
     def __init__(self, game, x, y, direction):
-        super().__init__(game, x, y, direction * 600, 0, 3, COLOR_BROWN, (30, 10), is_ex=True)
+        super().__init__(game, x, y, direction * 600, 0, 3, COLOR_BROWN, (50, 14), is_ex=True)
         self.returning = False
         self.start_x = x
         self.caught = False
+        self._direction = direction
+
+    def draw(self, screen, camera_offset):
+        center = (self.rect.centerx - camera_offset.x, self.rect.centery - camera_offset.y)
+        icon = _get_icon('Lineal.png', (50, 14))
+        if icon:
+            img = pygame.transform.flip(icon, self._direction < 0, False)
+            screen.blit(img, img.get_rect(center=center))
+        else:
+            draw_rect = self.rect.copy()
+            draw_rect.x -= camera_offset.x
+            draw_rect.y -= camera_offset.y
+            pygame.draw.rect(screen, self.color, draw_rect)
 
     def update(self, dt):
         if not self.returning:

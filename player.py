@@ -102,7 +102,7 @@ class Player(pygame.sprite.Sprite):
             path = os.path.join(sprite_dir, filename)
             try:
                 img = pygame.image.load(path).convert_alpha()
-                return pygame.transform.scale(img, (self.width, self.height))
+                return pygame.transform.scale(img, (60, 60))
             except Exception:
                 return None
 
