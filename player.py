@@ -97,13 +97,12 @@ class Player(pygame.sprite.Sprite):
 
     def _load_sprites(self):
         sprite_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', 'Spieler')
-        scale = 2  # 30 px → 60 px
 
         def _load(filename):
             path = os.path.join(sprite_dir, filename)
             try:
                 img = pygame.image.load(path).convert_alpha()
-                return pygame.transform.scale(img, (30 * scale, 30 * scale))
+                return pygame.transform.scale(img, (self.width, self.height))
             except Exception:
                 return None
 
@@ -147,12 +146,14 @@ class Player(pygame.sprite.Sprite):
         if not self.is_grounded:
             if self._jump_start_timer > 0:
                 idx = 0
-            elif self.vel.y < -150:
-                idx = 1
-            elif abs(self.vel.y) <= 150:
-                idx = 2
             else:
-                idx = 3
+                vy = -self.vel.y if self.game.inverted_gravity else self.vel.y
+                if vy < -150:
+                    idx = 1
+                elif abs(vy) <= 150:
+                    idx = 2
+                else:
+                    idx = 3
             spr = self._sprites['jump'][idx]
             if spr:
                 return spr
@@ -781,8 +782,9 @@ class Player(pygame.sprite.Sprite):
 
             if self.is_charging:
                 pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
+                bar_x = int(draw_x) - self.width // 2
                 pygame.draw.rect(screen, COLOR_WHITE,
-                                 (draw_rect.left, draw_rect.top - 8, int(w * pct), 5))
+                                 (bar_x, draw_rect.top - 8, int(self.width * pct), 5))
         else:
             # Fallback: procedural rectangle
             w = self.width * self.squash_factor.x
