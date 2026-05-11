@@ -258,7 +258,7 @@ class Game:
             self.player_bullets.update(dt)
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
-            self.effect_manager.update(dt)
+            self.effect_manager.update(dt, dt_raw=dt_raw)
             # Track damage dealt to boss during tutorial
             if self.player.alive() and self.boss.alive():
                 hits = pygame.sprite.spritecollide(self.boss, self.player_bullets, True)
@@ -288,7 +288,7 @@ class Game:
             self.player_bullets.update(dt)
             self.boss_bullets.update(dt)
             self.particle_manager.update(dt)
-            self.effect_manager.update(dt)
+            self.effect_manager.update(dt, dt_raw=dt_raw)
             
             if self.reality_break_timer > 0:
                 self.reality_break_timer -= dt
