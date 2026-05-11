@@ -165,7 +165,6 @@ class Boss(pygame.sprite.Sprite):
     def update_transition(self, dt):
         self.transition_timer -= dt
         self.vibrate_offset = pygame.math.Vector2(random.randint(-5, 5), random.randint(-5, 5))
-        self.rect.center = self.pos + self.vibrate_offset
         if self.transition_timer <= 0:
             self.in_transition = False
             self.state = 'idle'
@@ -446,9 +445,8 @@ class Boss(pygame.sprite.Sprite):
                 pygame.draw.line(screen, COLOR_BLACK, (draw_rect.x + 30, draw_rect.y + 110), (draw_rect.x + 70, draw_rect.y + 110), 3)
 
         if self.weak_point_timer > 0:
-             pulse = int(math.sin(pygame.time.get_ticks() * 0.2) * 5)
+             pulse = math.sin(pygame.time.get_ticks() * 0.2) * 5
              pygame.draw.rect(screen, COLOR_YELLOW, draw_rect.inflate(10 + pulse, 10 + pulse), 4)
 
         if self.dialogue:
-            dialogue_y = max(80, draw_rect.top - 40)
-            draw_text(screen, self.dialogue, 24, draw_rect.centerx, dialogue_y, COLOR_WHITE)
+            draw_text(screen, self.dialogue, 24, draw_rect.centerx, draw_rect.top - 40, COLOR_WHITE)
