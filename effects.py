@@ -116,7 +116,7 @@ class ParticleManager:
         self.particles = [p for p in self.particles if p.update(dt)]
 
     def draw(self, screen, camera_offset):
-        for p in self.particles:
+        for p in sorted(self.particles, key=lambda p: p.priority):
             p.draw(screen, camera_offset)
 
     def spawn_dust(self, pos, count=3):

@@ -97,13 +97,13 @@ class Player(pygame.sprite.Sprite):
 
     def _load_sprites(self):
         sprite_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', 'Spieler')
-        scale = 2  # 30 px → 60 px
 
         def _load(filename):
             path = os.path.join(sprite_dir, filename)
             try:
                 img = pygame.image.load(path).convert_alpha()
-                return pygame.transform.scale(img, (30 * scale, 30 * scale))
+                # Scale to match hitbox (40x60) for correct visual-collision alignment
+                return pygame.transform.scale(img, (self.width, self.height))
             except Exception:
                 return None
 
@@ -781,8 +781,9 @@ class Player(pygame.sprite.Sprite):
 
             if self.is_charging:
                 pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
+                bar_x = int(draw_x) - self.width // 2
                 pygame.draw.rect(screen, COLOR_WHITE,
-                                 (draw_rect.left, draw_rect.top - 8, int(w * pct), 5))
+                                 (bar_x, draw_rect.top - 8, int(self.width * pct), 5))
         else:
             # Fallback: procedural rectangle
             w = self.width * self.squash_factor.x
@@ -804,7 +805,7 @@ class Player(pygame.sprite.Sprite):
                     AfterimageParticle(pygame.math.Vector2(rect.topleft), surf, 0.25, 150))
             if self.is_charging:
                 pct = min(1.0, self.charge_timer / PLAYER_CHARGE_DURATION)
-                pygame.draw.rect(screen, COLOR_WHITE, (rect.left, rect.top - 10, w * pct, 5))
+                pygame.draw.rect(screen, COLOR_WHITE, (rect.left, rect.top - 10, self.width * pct, 5))
 
         if self.shield_active:
             cx = int(draw_x)
