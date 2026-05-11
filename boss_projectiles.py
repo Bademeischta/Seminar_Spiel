@@ -59,7 +59,9 @@ class BouncingEraser(BossProjectile):
         
         if self.squash_timer > 0:
             self.squash_timer -= dt
-            self.squash += (pygame.math.Vector2(1.0, 1.0) - self.squash) * 12 * dt # 0.2 per frame approx
+            self.squash += (pygame.math.Vector2(1.0, 1.0) - self.squash) * 12 * dt
+            self.squash.x = max(0.1, self.squash.x)
+            self.squash.y = max(0.1, self.squash.y)
 
     def draw(self, screen, camera_offset):
         w = self.width * self.squash.x

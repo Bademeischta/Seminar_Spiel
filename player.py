@@ -532,6 +532,8 @@ class Player(pygame.sprite.Sprite):
         if self.squash_timer > 0:
             self.squash_timer -= dt
             self.squash_factor += (pygame.math.Vector2(1.0, 1.0) - self.squash_factor) * 12 * dt
+            self.squash_factor.x = max(0.1, self.squash_factor.x)
+            self.squash_factor.y = max(0.1, self.squash_factor.y)
 
         for label in self.ability_labels[:]:
             label["timer"] -= dt
@@ -547,6 +549,7 @@ class Player(pygame.sprite.Sprite):
                 self._walk_frame = (self._walk_frame + 1) % 3
         else:
             self._walk_frame_timer = 0.0
+            self._walk_frame = 0
 
         if self._jump_start_timer > 0:
             self._jump_start_timer -= dt

@@ -216,8 +216,9 @@ class ParryDamageProjectile(PlayerProjectile):
     def update(self, dt):
         target = self.game.boss
         if target and target.alive():
-             dir_vec = (pygame.math.Vector2(target.rect.center) - self.pos).normalize()
-             self.vel = dir_vec * 900
+            dir_vec = pygame.math.Vector2(target.rect.center) - self.pos
+            if dir_vec.length() > 0:
+                self.vel = dir_vec.normalize() * 900
         super().update(dt)
 
     def draw(self, screen, camera_offset):
@@ -248,20 +249,20 @@ class EXSuper(PlayerProjectile):
         for bullet in self.game.boss_bullets:
             bullet.kill()
 
-        if self.game.boss.rect.colliderect(self.rect) and self.total_damage_dealt < PLAYER_EX_SUPER_DAMAGE_CAP:
-            # Schaden direkt anwenden ohne flash_timer-Sperre
-            # Tick-Rate: 8x pro Sekunde (0.125s Cooldown)
+        boss = self.game.boss
+        if (boss and boss.alive() and not boss.is_dying
+                and boss.rect.colliderect(self.rect)
+                and self.total_damage_dealt < PLAYER_EX_SUPER_DAMAGE_CAP):
+            # Tick-Rate: 8x pro Sekunde (0.125s), 6 Ticks × 3 = 18 max (cap=18)
             self._tick_timer -= dt
             if self._tick_timer <= 0:
                 self._tick_timer = 0.125
-                dmg = 3.0  # 3 Schaden pro Tick * 8 Ticks/s = 24/s, Cap 25 in ~1s
+                dmg = 3.0
                 if self.total_damage_dealt + dmg > PLAYER_EX_SUPER_DAMAGE_CAP:
                     dmg = PLAYER_EX_SUPER_DAMAGE_CAP - self.total_damage_dealt
 
-                # hp direkt modifizieren, aber damage number + shake via take_damage-Logik
-                boss = self.game.boss
                 boss.hp -= dmg
-                boss.flash_timer = 0.05  # kurzes Flash für Feedback
+                boss.flash_timer = 0.05
                 self.total_damage_dealt += dmg
                 self.game.effect_manager.add_damage_number(
                     boss.rect.center, int(dmg), is_weak=False)

@@ -27,7 +27,6 @@ class ChallengeMode:
             self.game.player.cards = 3
         elif self.name == "Mirror Match":
             self.mirror_timer = 5.0
-            self.action_log = []
 
     def update(self, dt):
         if self.name == "Mirror Match":
