@@ -102,7 +102,8 @@ class Player(pygame.sprite.Sprite):
             path = os.path.join(sprite_dir, filename)
             try:
                 img = pygame.image.load(path).convert_alpha()
-                return pygame.transform.scale(img, (self.width, self.height))
+                # Keep aspect ratio (30×30 → 60×60); hitbox is 40×60 but sprites are square
+                return pygame.transform.scale(img, (60, 60))
             except Exception:
                 return None
 
