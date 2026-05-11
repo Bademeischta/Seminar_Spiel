@@ -238,12 +238,15 @@ class EffectManager:
         
         self.damage_numbers.append(DamageNumber(pos, text, color, size))
 
-    def update(self, dt):
+    def update(self, dt, dt_raw=None):
+        if dt_raw is None:
+            dt_raw = dt
+
         if self.shake_timer > 0:
-            self.shake_timer -= dt
+            self.shake_timer -= dt_raw
 
         if self.freeze_timer > 0:
-            self.freeze_timer -= dt
+            self.freeze_timer -= dt_raw  # zählt mit echter Zeit, nicht game-skaliertem dt
             return
 
         if self.slowmo_timer > 0:
