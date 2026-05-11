@@ -83,22 +83,27 @@ class HUD:
         focus_fill = (self.game.player.focus_time / PLAYER_FOCUS_MAX_DURATION) * 170
         pygame.draw.rect(screen, COLOR_CYAN, (20, 115, focus_fill, 10))
 
-        # EX-Ability Selector icons
-        ex_map = [('Flieger', 'ex_flieger'), ('Eraser', 'ex_eraser'), ('Ruler', 'ex_ruler')]
+        # EX-Ability Selector (all 5 types)
+        ex_map = [
+            ('Flieger', 'ex_flieger', '1'),
+            ('Eraser',  'ex_eraser',  '2'),
+            ('Ruler',   'ex_ruler',   '3'),
+            ('Spread',  None,         '4'),
+            ('Homing',  None,         '5'),
+        ]
         selected_ex = self.game.player.selected_ex
-        for j, (name, key) in enumerate(ex_map):
-            ix = 20 + j * 36
+        for j, (name, key, label) in enumerate(ex_map):
+            ix = 20 + j * 32
             iy = 130
-            icon = self._icons.get(key)
+            icon = self._icons.get(key) if key else None
             is_selected = (selected_ex == name)
-            if is_selected:
-                pygame.draw.rect(screen, COLOR_WHITE, (ix - 2, iy - 2, 32, 32), 2)
+            slot_color = COLOR_WHITE if is_selected else COLOR_DARK_GRAY
+            pygame.draw.rect(screen, slot_color, (ix - 2, iy - 2, 32, 32), 2 if not is_selected else 1)
             if icon:
                 screen.blit(icon, (ix, iy))
             else:
-                color = COLOR_WHITE if is_selected else COLOR_DARK_GRAY
-                pygame.draw.rect(screen, color, (ix, iy, 28, 28), 1 if not is_selected else 0)
-                draw_text(screen, name[:1], 14, ix + 14, iy + 14, COLOR_WHITE)
+                draw_text(screen, label, 11, ix + 14, iy + 9,  COLOR_GRAY)
+                draw_text(screen, name[:3], 9, ix + 14, iy + 20, COLOR_GRAY)
 
         p = self.game.player
         y_status = 168
