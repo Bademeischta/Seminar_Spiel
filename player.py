@@ -35,20 +35,31 @@ _ANIM_OFFSETS: dict[tuple[str, int], tuple[int, int]] = {
     # --- IDLE ---
     ('idle', 0):   ( 7,  3),
 
-    # --- RUN (alle 6 Frames, alle rechtsschauend) ---
-    # Vollständiger bilateraler Laufzyklus:
-    #   0 Kontakt R (Tiefpunkt)  →  1 Übergang R→L  →  2 Passage R (Hochpunkt)
-    #   3 Kontakt L (Tiefpunkt)  →  4 Übergang L→R  →  5 Passage L (Hochpunkt)
-    # Für Laufen nach links werden alle 6 Frames in draw() horizontal gespiegelt;
-    # der ox-Wert wird dabei automatisch negiert (sign * ox in _get_draw_offset).
-    # oy korrigiert die variierenden Fußhöhen (Frame 3 hat oy=4, weil die Füße
-    # in diesem Frame 2 Canvas-Pixel höher stehen als im Durchschnitt).
-    ('run',  0):   ( 3,  2),   # Kontakt R  – Füße 3px links von Canvas-Mitte
-    ('run',  1):   ( 0,  2),   # Übergang   – Füße genau in Canvas-Mitte
-    ('run',  2):   ( 1,  2),   # Passage R  – Füße 1px links
-    ('run',  3):   (-1,  4),   # Kontakt L  – Füße 1px rechts, 2px höher (oy=4)
-    ('run',  4):   ( 3,  3),   # Übergang   – Füße 3px links, 1px höher
-    ('run',  5):   (-1,  2),   # Passage L  – Füße 1px rechts
+    # --- RUN – zwei richtungsgebundene 3-Frame-Zyklen ---
+    # Pixel-Analyse der Augen-Positionen ergab:
+    #   Frames 0-2 (Datei run_0..2.png): Charakter schaut nach RECHTS
+    #   Frames 3-5 (Datei run_3..5.png): Charakter schaut nach LINKS
+    # Statt zu spiegeln werden die jeweils passenden 3 Frames direkt benutzt –
+    # der Charakter dreht sich nie ungewollt mitten im Zyklus um.
+    #
+    # Cycle bei Bewegung nach RECHTS:  run_r 0 → 1 → 2 → 0 …
+    #   0 Kontakt R (Tiefpunkt, Staub)
+    #   1 Übergang R→L (Aufwärts)
+    #   2 Passage R   (Höchster Pkt)
+    # Cycle bei Bewegung nach LINKS:   run_l 0 → 1 → 2 → 0 …
+    #   0 Kontakt L (Tiefpunkt, Staub)  – aus Original-Frame 3
+    #   1 Übergang L→R (Aufwärts)        – aus Original-Frame 4
+    #   2 Passage L   (Höchster Pkt)     – aus Original-Frame 5
+    #
+    # ox/oy stammen aus der gemessenen Bounding-Box im jeweiligen
+    # Original-Orientierung (es wird KEIN Flip in draw() angewendet, daher
+    # ist sign immer +1 für die run_*-Zustände – siehe _get_draw_offset).
+    ('run_r', 0):  ( 3,  2),   # Kontakt R   – Füße 3px links von Canvas-Mitte
+    ('run_r', 1):  ( 0,  2),   # Übergang R→L – Füße zentriert
+    ('run_r', 2):  ( 1,  2),   # Passage R   – Füße 1px links
+    ('run_l', 0):  (-1,  4),   # Kontakt L   – Füße 1px rechts, 2px höher (oy=4)
+    ('run_l', 1):  ( 3,  3),   # Übergang L→R – Füße 3px links, 1px höher
+    ('run_l', 2):  (-1,  2),   # Passage L   – Füße 1px rechts
 
     # --- JUMP (4 phases) ---
     # Phase 2 (apex) has a large oy because the figure tucks its legs up.
@@ -192,9 +203,15 @@ class Player(pygame.sprite.Sprite):
             except Exception:
                 return None
 
+        # Run-Sprites bewusst in zwei getrennte Sets, weil die Original-
+        # Frames bereits zwei Blickrichtungen enthalten:
+        #   run_r: Frames 0-2 (rechtsschauend)
+        #   run_l: Frames 3-5 (linksschauend)
+        # In draw() wird für diese Zustände NICHT geflippt.
         self._sprites = {
             'idle':  [_load('idle.png')],
-            'run':   [_load(f'run/run_{i}.png') for i in range(6)],
+            'run_r': [_load(f'run/run_{i}.png') for i in (0, 1, 2)],
+            'run_l': [_load(f'run/run_{i}.png') for i in (3, 4, 5)],
             'jump':  [_load(f'jump/jump_{i}.png') for i in range(4)],
             'shoot': [_load(f'shoot/shoot_{i}.png') for i in range(5)],
         }
@@ -237,10 +254,17 @@ class Player(pygame.sprite.Sprite):
             else:                   self._frame = 3  # landung    – falling / landing
             return
 
-        # RUN – grounded and moving.
+        # RUN – grounded und bewegt. Zwei getrennte Zustände, abhängig von der
+        # Bewegungsrichtung. Die Sprites selbst sind bereits in der korrekten
+        # Blickrichtung gezeichnet; es wird nicht geflippt.
         if self.is_grounded and abs(self.vel.x) > _RUN_SPD_THRESHOLD:
-            self._state = 'run'
-            # frame index is advanced in _update_run_timer(); keep it stable here.
+            new_state = 'run_r' if self.vel.x > 0 else 'run_l'
+            if self._state != new_state:
+                # Beim Richtungswechsel den Frame-Counter mitnehmen, damit der
+                # Lauf­rhythmus erhalten bleibt (z.B. mid-stride).
+                self._frame = self._frame % 3
+                self._frame_timer = 0.0
+            self._state = new_state
             return
 
         # IDLE – default.
@@ -248,12 +272,12 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0
 
     def _update_run_timer(self, dt: float):
-        """Advance the run cycle frame counter (6-frame bilateral cycle)."""
-        if self._state == 'run':
+        """Advance the run cycle frame counter (3-frame cycle per direction)."""
+        if self._state in ('run_r', 'run_l'):
             self._frame_timer += dt
             if self._frame_timer >= _RUN_FRAME_DURATION:
                 self._frame_timer -= _RUN_FRAME_DURATION
-                self._frame = (self._frame + 1) % len(self._sprites['run'])
+                self._frame = (self._frame + 1) % len(self._sprites[self._state])
         else:
             self._frame_timer = 0.0
             self._frame = 0
@@ -263,9 +287,19 @@ class Player(pygame.sprite.Sprite):
     # ------------------------------------------------------------------
 
     def _get_draw_offset(self) -> tuple[int, int]:
-        """Return (screen_dx, screen_dy) to add to the default midbottom position."""
+        """Return (screen_dx, screen_dy) to add to the default midbottom position.
+
+        Für die richtungsgebundenen Run-Zustände (run_r / run_l) bleibt der
+        ox-Wert unangetastet, weil die Sprites schon in der korrekten
+        Blickrichtung gezeichnet sind und in draw() NICHT geflippt werden.
+        Für alle übrigen Zustände wird ox negiert, wenn der Spieler nach links
+        schaut – diese Sprites werden in draw() horizontal gespiegelt.
+        """
         ox, oy = _ANIM_OFFSETS.get((self._state, self._frame), (0, 0))
-        sign = 1 if self.facing_right else -1
+        if self._state in ('run_r', 'run_l'):
+            sign = 1
+        else:
+            sign = 1 if self.facing_right else -1
         return sign * ox * _SPRITE_SCALE, oy * _SPRITE_SCALE
 
     # ------------------------------------------------------------------
@@ -895,8 +929,11 @@ class Player(pygame.sprite.Sprite):
             h = max(1, int(sh * self.squash_factor.y))
             scaled = pygame.transform.scale(sprite, (w, h))
 
-            # Mirror for left-facing direction
-            if not self.facing_right:
+            # Mirror for left-facing direction.
+            # Run-Sprites sind bereits richtungsspezifisch (run_r=rechts,
+            # run_l=links) und dürfen NICHT geflippt werden.
+            is_directional_run = self._state in ('run_r', 'run_l')
+            if not self.facing_right and not is_directional_run:
                 scaled = pygame.transform.flip(scaled, True, False)
 
             # Tint overlays
