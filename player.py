@@ -185,6 +185,7 @@ class Player(pygame.sprite.Sprite):
         self._shot_anim_timer = 0.0 # post-shot animation clock
         self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
         self._landing_timer = 0.0   # forces jump_3 (touch-down frame) for one brief moment
+        self._bullet_queued = None
 
         self._load_sprites()
 
@@ -756,7 +757,7 @@ class Player(pygame.sprite.Sprite):
 
     def update_animation(self, dt):
         if self._shot_anim_timer > 0:
-            old_timer = self._shot_anim_timer
+            self._spawn_queued_bullet()
             self._shot_anim_timer -= dt
         if self._landing_timer > 0:
             self._landing_timer = max(0.0, self._landing_timer - dt)
