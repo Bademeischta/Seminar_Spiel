@@ -1,9 +1,19 @@
 import pygame
 import math
 import random
+import os
 from constants import *
 from boss_projectiles import *
 from utils import draw_text, SoundManager
+
+def _load_boss_sprite(filename, size):
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', filename)
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.flip(img, True, False)
+        return pygame.transform.scale(img, size)
+    except Exception:
+        return None
 
 class Boss(pygame.sprite.Sprite):
     def __init__(self, game):
