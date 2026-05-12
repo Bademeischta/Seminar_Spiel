@@ -10,7 +10,6 @@ def _load_boss_sprite(filename, size):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', filename)
     try:
         img = pygame.image.load(path).convert_alpha()
-        img = pygame.transform.flip(img, True, False)
         return pygame.transform.scale(img, size)
     except Exception:
         return None
@@ -26,6 +25,8 @@ class Boss(pygame.sprite.Sprite):
         self.image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.midright = (950, 450)
+
+        self.idle_sprite = _load_boss_sprite('boss_idle.png', (self.width, self.height))
         
         self.hp = BOSS_MAX_HP
         self.max_hp = BOSS_MAX_HP
@@ -441,14 +442,16 @@ class Boss(pygame.sprite.Sprite):
 
         if self.flash_timer > 0:
             pygame.draw.rect(screen, COLOR_WHITE, draw_rect)
+        elif self.state == 'idle' and self.idle_sprite:
+            screen.blit(self.idle_sprite, draw_rect)
         else:
             pygame.draw.rect(screen, self.color, draw_rect)
             pygame.draw.rect(screen, COLOR_BLACK, draw_rect.inflate(-10, -10), 2)
-            
+
             eye_color = COLOR_YELLOW if self.phase == 2 else (COLOR_RED if self.phase == 3 else COLOR_WHITE)
             pygame.draw.rect(screen, eye_color, (draw_rect.x + 20, draw_rect.y + 40, 20, 20))
             pygame.draw.rect(screen, eye_color, (draw_rect.x + 60, draw_rect.y + 40, 20, 20))
-            
+
             if self.dialogue:
                 pygame.draw.rect(screen, COLOR_BLACK, (draw_rect.x + 30, draw_rect.y + 100, 40, 20))
             else:
