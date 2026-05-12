@@ -21,26 +21,42 @@ class HUD:
         if self._icons is not None:
             return
         card_size = (30, 45)
-        ex_size = (28, 28)
+        ex_size   = (28, 28)
+        hp_size   = (200, 40)   # scaled lebensleiste bar (original 100×20 → 2×)
         self._icons = {
+            # Cards (special meter)
             'blitz_voll': _load_icon('Blitz voll.png', card_size),
             'blitz_halb': _load_icon('Blitz halb.png', card_size),
             'blitz_leer': _load_icon('Blitz leer.png', card_size),
-            'ex_flieger': _load_icon('Stift 1.png', ex_size),
-            'ex_eraser':  _load_icon('Rauchverbot.png', ex_size),
-            'ex_ruler':   _load_icon('Lineal.png', ex_size),
+            # EX ability selector
+            'ex_flieger': _load_icon('flieger_klein.png', ex_size),
+            'ex_eraser':  _load_icon('Rauchverbot.png',   ex_size),
+            'ex_ruler':   _load_icon('Lineal.png',        ex_size),
+            'ex_spread':  _load_icon('winkelmesser.png',  ex_size),
+            # HP lebensleiste (key = remaining HP value)
+            'leben_5': _load_icon('leben_5.png', hp_size),
+            'leben_4': _load_icon('leben_4.png', hp_size),
+            'leben_3': _load_icon('leben_3.png', hp_size),
+            'leben_2': _load_icon('leben_2.png', hp_size),
+            'leben_1': _load_icon('leben_1.png', hp_size),
         }
 
     def draw(self, screen):
         self._ensure_icons()
 
-        # Player HP
-        for i in range(PLAYER_MAX_HP):
-            rect = pygame.Rect(20 + i * 40, 20, 30, 30)
-            if i < self.game.player.hp:
-                pygame.draw.rect(screen, COLOR_RED, rect)
-            else:
-                pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, 2)
+        # Player HP – single lebensleiste sprite (one image per HP value 1-5)
+        hp  = max(1, min(PLAYER_MAX_HP, self.game.player.hp))
+        bar = self._icons.get(f'leben_{hp}')
+        if bar:
+            screen.blit(bar, (20, 20))
+        else:
+            # Fallback: coloured squares
+            for i in range(PLAYER_MAX_HP):
+                rect = pygame.Rect(20 + i * 40, 20, 30, 30)
+                if i < self.game.player.hp:
+                    pygame.draw.rect(screen, COLOR_RED, rect)
+                else:
+                    pygame.draw.rect(screen, COLOR_DARK_GRAY, rect, 2)
 
         # Special Meter (Cards) – lightning bolt icons
         for i in range(PLAYER_MAX_CARDS):
@@ -88,7 +104,7 @@ class HUD:
             ('Flieger', 'ex_flieger', '1'),
             ('Eraser',  'ex_eraser',  '2'),
             ('Ruler',   'ex_ruler',   '3'),
-            ('Spread',  None,         '4'),
+            ('Spread',  'ex_spread',  '4'),
             ('Homing',  None,         '5'),
         ]
         selected_ex = self.game.player.selected_ex
@@ -165,6 +181,9 @@ class GradeScreen:
         self.game = game
         self.stats = stats
         self.grade, self.score = self.calculate_grade()
+        icon_sz = (24, 24)
+        self._ja   = _load_icon('ja.png',   icon_sz)
+        self._nein = _load_icon('nein.png', icon_sz)
 
     def calculate_grade(self):
         time_score = 0
@@ -244,9 +263,12 @@ class GradeScreen:
 
         y = 155
         for label, pts, good in rows:
-            col = COLOR_GREEN if good else COLOR_WHITE
+            col  = COLOR_GREEN if good else COLOR_WHITE
+            icon = self._ja if good else self._nein
             draw_text(screen, label, 24, SCREEN_WIDTH // 2 - 60, y, col, center=False)
-            draw_text(screen, pts, 24, SCREEN_WIDTH // 2 + 230, y, col)
+            draw_text(screen, pts,   24, SCREEN_WIDTH // 2 + 230, y, col)
+            if icon:
+                screen.blit(icon, (SCREEN_WIDTH // 2 + 270, y - 12))
             y += 38
 
         draw_text(screen, f"SCORE: {self.score}", 28, SCREEN_WIDTH//2, y + 10, COLOR_WHITE)

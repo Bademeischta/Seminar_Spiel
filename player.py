@@ -183,11 +183,15 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0             # current frame index within state
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
+
+        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
+        self._landing_timer = 0.0   # forces jump_3 (touch-down frame) for one brief moment
+
         self._takeoff_timer = 0.0
         self._landing_timer = 0.0
         self._bullet_queued = None
-        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
-
+        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animatio
+     
         self._load_sprites()
 
     # ------------------------------------------------------------------
@@ -227,6 +231,16 @@ class Player(pygame.sprite.Sprite):
     def _update_anim_state(self):
         """Determine which animation state and frame should be active.
 
+
+        Priority: shoot > jump > run > idle. The shoot timer fully locks
+        the state until it elapses, so movement input cannot cut off the
+        recoil/recovery frames. The jump branch is gated by an effective
+        grounded check (is_grounded OR within ground-grace window) AND by
+        a real vertical velocity, so a single-frame float blip can never
+        flicker the figure between idle and jump.
+        """
+
+
         Priority: shoot > landing > takeoff > airborne > run > idle.
         """
 
@@ -234,6 +248,12 @@ class Player(pygame.sprite.Sprite):
         if self._shot_anim_timer > 0:
             self._state = 'shoot'
             t = self._shot_anim_timer
+            # Timer = 0.40 s; each phase gets at least 4-6 frames at 60 fps
+            if   t > 0.30: self._frame = 1   # entladen   – discharge  (0.10 s)
+            elif t > 0.20: self._frame = 2   # rückstoß   – recoil     (0.10 s)
+            elif t > 0.10: self._frame = 3   # recover    – recovery   (0.10 s)
+            else:          self._frame = 4   # readyup    – ready-up   (0.10 s)
+
             # Sequence: shoot_0 -> shoot_1 -> shoot_2 -> shoot_3 -> shoot_4
             # Total timer 0.40s. 5 frames, each approx 0.08s.
             if   t > 0.32: self._frame = 0   # aufladen
@@ -241,6 +261,7 @@ class Player(pygame.sprite.Sprite):
             elif t > 0.16: self._frame = 2   # rückstoß
             elif t > 0.08: self._frame = 3   # recover
             else:          self._frame = 4   # readyup
+
             return
 
         if self.is_charging:
@@ -249,6 +270,15 @@ class Player(pygame.sprite.Sprite):
             return
 
         # Effective grounded = is_grounded OR within the 3-frame grace window.
+
+        # This absorbs the 1-frame oscillation that the platform collision
+        # check can produce when the player is sitting motionless on a
+        # platform edge.
+        effective_grounded = self.is_grounded or self._ground_grace > 0
+
+        # ---------- JUMP (only when truly airborne AND moving vertically) ----
+        if not effective_grounded and abs(self.vel.y) > 40:
+
         effective_grounded = self.is_grounded or self._ground_grace > 0
 
         # ---------- LANDING (high priority on ground) ----------
@@ -259,9 +289,33 @@ class Player(pygame.sprite.Sprite):
 
         # ---------- TAKEOFF (short fixed duration) ----------
         if self._takeoff_timer > 0:
+
             self._state = 'jump'
             self._frame = 0  # takeoff frame
             return
+
+
+            # vy_up positive = moving away from ground (upward in normal gravity).
+            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
+
+            # Velocity-bound phases – user-specified mapping:
+            #   0  absprung      – explosive take-off burst (vy_up > 500)
+            #   1  aufstieg      – rising AND falling (reused for descent)
+            #   2  scheitelpunkt – apex window (|vy_up| ≤ 80)
+            #   3  landung       – fast descent only (vy_up < -500)
+            if   vy_up >  500: self._frame = 0   # absprung   – explosive take-off
+            elif vy_up >   80: self._frame = 1   # aufstieg   – rising
+            elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex
+            elif vy_up > -500: self._frame = 1   # falling    – reuse aufstieg frame
+            else:              self._frame = 3   # landung    – fast descent
+            return
+
+        # ---------- LANDING TOUCH-DOWN (brief after hitting ground) ----------
+        # Shows jump_3 for _landing_timer seconds so the touchdown frame is
+        # always visible even when collision resolves in the same tick.
+        if self._landing_timer > 0:
+            self._state = 'jump'
+            self._frame = 3
 
         # ---------- AIRBORNE (Rising / Apex / Falling) ----------
         if not effective_grounded:
@@ -275,6 +329,7 @@ class Player(pygame.sprite.Sprite):
                 self._frame = 1  # falling (reuse aufstieg as requested)
             else:
                 self._frame = 2  # apex
+
             return
 
         # ---------- RUN (grounded and moving horizontally) ----
@@ -545,6 +600,21 @@ class Player(pygame.sprite.Sprite):
             self.shoot_timer = 0.166
             self._shot_anim_timer = 0.40
 
+            # Muzzle flash: tiny burst of particles + minimal screen nudge
+            self.game.effect_manager.apply_shake(0.05, 1.5)
+            gx = self.rect.centerx + (22 if self.facing_right else -22)
+            gy = self.rect.centery - 4
+            flash_color = COLOR_GOLD if is_gold else COLOR_LIGHT_BLUE
+            for _ in range(5):
+                self.game.particle_manager.add(
+                    SquareParticle(
+                        (gx, gy),
+                        (random.uniform(-50, 50) + (260 if self.facing_right else -260),
+                         random.uniform(-80, 80)),
+                        0.07, flash_color, 3))
+
+
+
     def shoot_charge(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
             return
@@ -746,17 +816,8 @@ class Player(pygame.sprite.Sprite):
         if self._shot_anim_timer > 0:
             old_timer = self._shot_anim_timer
             self._shot_anim_timer -= dt
-            # Spawn bullet at transition from frame 0 (0.40-0.32) to frame 1 (0.32-0.24)
-            if self._bullet_queued and old_timer > 0.32 and self._shot_anim_timer <= 0.32:
-                self._spawn_queued_bullet()
-        elif self._bullet_queued:
-            # Fallback: if timer finished but bullet not spawned
-            self._spawn_queued_bullet()
-
-        if self._takeoff_timer > 0:
-            self._takeoff_timer -= dt
         if self._landing_timer > 0:
-            self._landing_timer -= dt
+            self._landing_timer = max(0.0, self._landing_timer - dt)
 
         # Grounded grace: hold the "on ground" state for 3 frames after the
         # last real ground contact. Smooths over the 1-frame is_grounded blips
@@ -822,8 +883,7 @@ class Player(pygame.sprite.Sprite):
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
-                    self._landing_timer = 0.15
-                    self._takeoff_timer = 0.0
+                    self._landing_timer = 0.10
                 self.pos.y = 0
                 self.vel.y = 0
                 self.is_grounded = True
@@ -839,8 +899,7 @@ class Player(pygame.sprite.Sprite):
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
-                    self._landing_timer = 0.15
-                    self._takeoff_timer = 0.0
+                    self._landing_timer = 0.10
                 self.pos.y = SCREEN_HEIGHT
                 self.vel.y = 0
                 self.is_grounded = True
@@ -861,11 +920,14 @@ class Player(pygame.sprite.Sprite):
                 if (self.vel.y >= 0
                         and ground_probe.colliderect(platform.rect)
                         and self.rect.bottom <= platform.rect.bottom + 10):
-                    if not was_grounded:
-                        self._landing_timer = 0.15
-                        self._takeoff_timer = 0.0
                     self.pos.y = platform.rect.top
                     self.vel.y = 0
+                    if not was_grounded:
+                        self.spawn_jump_particles()
+                        self.sound_manager.play("land")
+                        self.squash_factor = pygame.math.Vector2(1.2, 0.8)
+                        self.squash_timer = 0.166
+                        self._landing_timer = 0.10
                     self.is_grounded = True
                     if self.momentum_grace_timer <= 0:
                         self.momentum_boost = 1.0
@@ -879,11 +941,14 @@ class Player(pygame.sprite.Sprite):
                 if (self.vel.y <= 0
                         and probe_up.colliderect(platform.rect)
                         and self.rect.top >= platform.rect.top - 10):
-                    if not was_grounded:
-                        self._landing_timer = 0.15
-                        self._takeoff_timer = 0.0
                     self.pos.y = platform.rect.bottom + self.height
                     self.vel.y = 0
+                    if not was_grounded:
+                        self.spawn_jump_particles()
+                        self.sound_manager.play("land")
+                        self.squash_factor = pygame.math.Vector2(1.2, 0.8)
+                        self.squash_timer = 0.166
+                        self._landing_timer = 0.10
                     self.is_grounded = True
                     if self.momentum_grace_timer <= 0:
                         self.momentum_boost = 1.0
