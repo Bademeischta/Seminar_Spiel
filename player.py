@@ -266,7 +266,7 @@ class Player(pygame.sprite.Sprite):
 
         if self.is_charging:
             self._state = 'shoot'
-            self._frame = 0  # charging pose
+            self._frame = 0  # aufladen – charging pose
             return
 
         # Effective grounded = is_grounded OR within the 3-frame grace window.
@@ -330,6 +330,24 @@ class Player(pygame.sprite.Sprite):
             else:
                 self._frame = 2  # apex
 
+            return
+
+        # ---------- JUMP (only when truly airborne AND moving vertically) ----
+        if not effective_grounded and abs(self.vel.y) > 40:
+            self._state = 'jump'
+            # vy_up positive = moving upward in normal gravity.
+            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
+            # Mapping requested by user:
+            #   0  absprung      – explosive take-off  (vy_up > 500)
+            #   1  aufstieg      – rising               (vy_up > 80)
+            #   2  scheitelpunkt – apex window          (|vy_up| ≤ 80)
+            #   1  falling       – reuse aufstieg frame (vy_up > -500)
+            #   3  landung       – fast descent only    (vy_up ≤ -500)
+            if   vy_up >  500: self._frame = 0
+            elif vy_up >   80: self._frame = 1
+            elif vy_up >  -80: self._frame = 2
+            elif vy_up > -500: self._frame = 1
+            else:              self._frame = 3
             return
 
         # ---------- RUN (grounded and moving horizontally) ----
