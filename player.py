@@ -184,6 +184,7 @@ class Player(pygame.sprite.Sprite):
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
         self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
+        self._landing_timer = 0.0   # forces jump_3 (touch-down frame) for one brief moment
 
         self._load_sprites()
 
@@ -271,6 +272,14 @@ class Player(pygame.sprite.Sprite):
             elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex
             elif vy_up > -500: self._frame = 1   # falling    – reuse aufstieg frame
             else:              self._frame = 3   # landung    – fast descent
+            return
+
+        # ---------- LANDING TOUCH-DOWN (brief after hitting ground) ----------
+        # Shows jump_3 for _landing_timer seconds so the touchdown frame is
+        # always visible even when collision resolves in the same tick.
+        if self._landing_timer > 0:
+            self._state = 'jump'
+            self._frame = 3
             return
 
         # ---------- RUN (grounded and moving horizontally) ----
@@ -535,6 +544,19 @@ class Player(pygame.sprite.Sprite):
             self.shoot_timer = 0.166
             self._shot_anim_timer = 0.40
 
+            # Muzzle flash: tiny burst of particles + minimal screen nudge
+            self.game.effect_manager.apply_shake(0.05, 1.5)
+            gx = self.rect.centerx + (22 if self.facing_right else -22)
+            gy = self.rect.centery - 4
+            flash_color = COLOR_GOLD if is_gold else COLOR_LIGHT_BLUE
+            for _ in range(5):
+                self.game.particle_manager.add(
+                    SquareParticle(
+                        (gx, gy),
+                        (random.uniform(-50, 50) + (260 if self.facing_right else -260),
+                         random.uniform(-80, 80)),
+                        0.07, flash_color, 3))
+
     def shoot_charge(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
             return
@@ -735,6 +757,8 @@ class Player(pygame.sprite.Sprite):
     def update_animation(self, dt):
         if self._shot_anim_timer > 0:
             self._shot_anim_timer -= dt
+        if self._landing_timer > 0:
+            self._landing_timer = max(0.0, self._landing_timer - dt)
 
         # Grounded grace: hold the "on ground" state for 3 frames after the
         # last real ground contact. Smooths over the 1-frame is_grounded blips
@@ -780,6 +804,7 @@ class Player(pygame.sprite.Sprite):
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
+                    self._landing_timer = 0.10
                 self.pos.y = 0
                 self.vel.y = 0
                 self.is_grounded = True
@@ -795,6 +820,7 @@ class Player(pygame.sprite.Sprite):
                     self.sound_manager.play("land")
                     self.squash_factor = pygame.math.Vector2(1.2, 0.8)
                     self.squash_timer = 0.166
+                    self._landing_timer = 0.10
                 self.pos.y = SCREEN_HEIGHT
                 self.vel.y = 0
                 self.is_grounded = True
@@ -817,6 +843,12 @@ class Player(pygame.sprite.Sprite):
                         and self.rect.bottom <= platform.rect.bottom + 10):
                     self.pos.y = platform.rect.top
                     self.vel.y = 0
+                    if not was_grounded:
+                        self.spawn_jump_particles()
+                        self.sound_manager.play("land")
+                        self.squash_factor = pygame.math.Vector2(1.2, 0.8)
+                        self.squash_timer = 0.166
+                        self._landing_timer = 0.10
                     self.is_grounded = True
                     if self.momentum_grace_timer <= 0:
                         self.momentum_boost = 1.0
@@ -832,6 +864,12 @@ class Player(pygame.sprite.Sprite):
                         and self.rect.top >= platform.rect.top - 10):
                     self.pos.y = platform.rect.bottom + self.height
                     self.vel.y = 0
+                    if not was_grounded:
+                        self.spawn_jump_particles()
+                        self.sound_manager.play("land")
+                        self.squash_factor = pygame.math.Vector2(1.2, 0.8)
+                        self.squash_timer = 0.166
+                        self._landing_timer = 0.10
                     self.is_grounded = True
                     if self.momentum_grace_timer <= 0:
                         self.momentum_boost = 1.0
