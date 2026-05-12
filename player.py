@@ -183,9 +183,15 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0             # current frame index within state
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
+
         self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
         self._landing_timer = 0.0   # forces jump_3 (touch-down frame) for one brief moment
 
+        self._takeoff_timer = 0.0
+        self._landing_timer = 0.0
+        self._bullet_queued = None
+        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animatio
+     
         self._load_sprites()
 
     # ------------------------------------------------------------------
@@ -225,12 +231,17 @@ class Player(pygame.sprite.Sprite):
     def _update_anim_state(self):
         """Determine which animation state and frame should be active.
 
+
         Priority: shoot > jump > run > idle. The shoot timer fully locks
         the state until it elapses, so movement input cannot cut off the
         recoil/recovery frames. The jump branch is gated by an effective
         grounded check (is_grounded OR within ground-grace window) AND by
         a real vertical velocity, so a single-frame float blip can never
         flicker the figure between idle and jump.
+        """
+
+
+        Priority: shoot > landing > takeoff > airborne > run > idle.
         """
 
         # ---------- SHOOT (highest priority – locks all transitions) ----------
@@ -242,6 +253,15 @@ class Player(pygame.sprite.Sprite):
             elif t > 0.20: self._frame = 2   # rückstoß   – recoil     (0.10 s)
             elif t > 0.10: self._frame = 3   # recover    – recovery   (0.10 s)
             else:          self._frame = 4   # readyup    – ready-up   (0.10 s)
+
+            # Sequence: shoot_0 -> shoot_1 -> shoot_2 -> shoot_3 -> shoot_4
+            # Total timer 0.40s. 5 frames, each approx 0.08s.
+            if   t > 0.32: self._frame = 0   # aufladen
+            elif t > 0.24: self._frame = 1   # entladen
+            elif t > 0.16: self._frame = 2   # rückstoß
+            elif t > 0.08: self._frame = 3   # recover
+            else:          self._frame = 4   # readyup
+
             return
 
         if self.is_charging:
@@ -250,6 +270,7 @@ class Player(pygame.sprite.Sprite):
             return
 
         # Effective grounded = is_grounded OR within the 3-frame grace window.
+
         # This absorbs the 1-frame oscillation that the platform collision
         # check can produce when the player is sitting motionless on a
         # platform edge.
@@ -257,7 +278,22 @@ class Player(pygame.sprite.Sprite):
 
         # ---------- JUMP (only when truly airborne AND moving vertically) ----
         if not effective_grounded and abs(self.vel.y) > 40:
+
+        effective_grounded = self.is_grounded or self._ground_grace > 0
+
+        # ---------- LANDING (high priority on ground) ----------
+        if effective_grounded and self._landing_timer > 0:
             self._state = 'jump'
+            self._frame = 3  # landing frame
+            return
+
+        # ---------- TAKEOFF (short fixed duration) ----------
+        if self._takeoff_timer > 0:
+
+            self._state = 'jump'
+            self._frame = 0  # takeoff frame
+            return
+
 
             # vy_up positive = moving away from ground (upward in normal gravity).
             vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
@@ -280,6 +316,20 @@ class Player(pygame.sprite.Sprite):
         if self._landing_timer > 0:
             self._state = 'jump'
             self._frame = 3
+
+        # ---------- AIRBORNE (Rising / Apex / Falling) ----------
+        if not effective_grounded:
+            self._state = 'jump'
+            # vy_up positive = moving away from ground (upward in normal gravity).
+            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
+
+            if vy_up > 40:
+                self._frame = 1  # aufstieg
+            elif vy_up < -40:
+                self._frame = 1  # falling (reuse aufstieg as requested)
+            else:
+                self._frame = 2  # apex
+
             return
 
         # ---------- RUN (grounded and moving horizontally) ----
@@ -425,6 +475,8 @@ class Player(pygame.sprite.Sprite):
             self.on_wall = None
             self.check_momentum_chain()
             self.spawn_jump_particles()
+            self._takeoff_timer = 0.1
+            self._landing_timer = 0.0
             return
 
         if self.jump_count < self.max_jumps or self.is_grounded:
@@ -449,6 +501,9 @@ class Player(pygame.sprite.Sprite):
             self.jump_count += 1
             self.is_grounded = False
             self.drop_timer = 0
+
+            self._takeoff_timer = 0.1
+            self._landing_timer = 0.0
 
             self.squash_factor = pygame.math.Vector2(0.8, 1.2)
             self.squash_timer = 0.166
@@ -535,12 +590,13 @@ class Player(pygame.sprite.Sprite):
             if dist < 100:
                 self.cards = min(self.cards + 0.05, PLAYER_MAX_CARDS)
 
-            bullet = PlayerProjectile(
-                self.game, self.rect.centerx, self.rect.centery,
-                720 if self.facing_right else -720, 0, damage, color)
-            bullet.is_golden = is_gold
-            self.game.all_sprites.add(bullet)
-            self.game.player_bullets.add(bullet)
+            self._bullet_queued = {
+                "type": "basic",
+                "vel_x": 720 if self.facing_right else -720,
+                "damage": damage,
+                "color": color,
+                "is_gold": is_gold
+            }
             self.shoot_timer = 0.166
             self._shot_anim_timer = 0.40
 
@@ -557,17 +613,19 @@ class Player(pygame.sprite.Sprite):
                          random.uniform(-80, 80)),
                         0.07, flash_color, 3))
 
+
+
     def shoot_charge(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
             return
         self.sound_manager.play("charge_shot")
-        bullet = PlayerProjectile(
-            self.game, self.rect.centerx, self.rect.centery,
-            900 if self.facing_right else -900, 0,
-            PLAYER_CHARGE_SHOT_DAMAGE, COLOR_LIGHT_BLUE, size=(30, 30))
-        self.game.all_sprites.add(bullet)
-        self.game.player_bullets.add(bullet)
-        self._shot_anim_timer = 0.25
+        self._bullet_queued = {
+            "type": "charge",
+            "vel_x": 900 if self.facing_right else -900,
+            "damage": PLAYER_CHARGE_SHOT_DAMAGE,
+            "color": COLOR_LIGHT_BLUE
+        }
+        self._shot_anim_timer = 0.40
 
     def shoot_spread(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
@@ -756,6 +814,7 @@ class Player(pygame.sprite.Sprite):
 
     def update_animation(self, dt):
         if self._shot_anim_timer > 0:
+            old_timer = self._shot_anim_timer
             self._shot_anim_timer -= dt
         if self._landing_timer > 0:
             self._landing_timer = max(0.0, self._landing_timer - dt)
@@ -770,6 +829,26 @@ class Player(pygame.sprite.Sprite):
 
         self._update_anim_state()
         self._update_run_timer(dt)
+
+    def _spawn_queued_bullet(self):
+        if not self._bullet_queued:
+            return
+        data = self._bullet_queued
+        if data["type"] == "basic":
+            bullet = PlayerProjectile(
+                self.game, self.rect.centerx, self.rect.centery,
+                data["vel_x"], 0, data["damage"], data["color"])
+            bullet.is_golden = data["is_gold"]
+            self.game.all_sprites.add(bullet)
+            self.game.player_bullets.add(bullet)
+        elif data["type"] == "charge":
+            bullet = PlayerProjectile(
+                self.game, self.rect.centerx, self.rect.centery,
+                data["vel_x"], 0,
+                data["damage"], data["color"], size=(30, 30))
+            self.game.all_sprites.add(bullet)
+            self.game.player_bullets.add(bullet)
+        self._bullet_queued = None
 
     # ------------------------------------------------------------------
     # Collision
