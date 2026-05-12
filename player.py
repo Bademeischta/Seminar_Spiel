@@ -183,6 +183,7 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0             # current frame index within state
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
+        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
 
         self._load_sprites()
 
@@ -221,9 +222,17 @@ class Player(pygame.sprite.Sprite):
     # ------------------------------------------------------------------
 
     def _update_anim_state(self):
-        """Determine which animation state and frame should be active."""
+        """Determine which animation state and frame should be active.
 
-        # SHOOT – highest priority so the action reads clearly.
+        Priority: shoot > jump > run > idle. The shoot timer fully locks
+        the state until it elapses, so movement input cannot cut off the
+        recoil/recovery frames. The jump branch is gated by an effective
+        grounded check (is_grounded OR within ground-grace window) AND by
+        a real vertical velocity, so a single-frame float blip can never
+        flicker the figure between idle and jump.
+        """
+
+        # ---------- SHOOT (highest priority – locks all transitions) ----------
         if self._shot_anim_timer > 0:
             self._state = 'shoot'
             t = self._shot_anim_timer
@@ -238,36 +247,42 @@ class Player(pygame.sprite.Sprite):
             self._frame = 0  # charging pose
             return
 
-        # JUMP – only enter when truly airborne AND moving vertically.
-        # The |vel.y| > 30 guard prevents a 1-frame flicker at the moment of
-        # landing, where gravity has already incremented vel.y but the
-        # collision resolution hasn't zeroed it yet.
-        if not self.is_grounded and abs(self.vel.y) > 30:
+        # Effective grounded = is_grounded OR within the 3-frame grace window.
+        # This absorbs the 1-frame oscillation that the platform collision
+        # check can produce when the player is sitting motionless on a
+        # platform edge.
+        effective_grounded = self.is_grounded or self._ground_grace > 0
+
+        # ---------- JUMP (only when truly airborne AND moving vertically) ----
+        if not effective_grounded and abs(self.vel.y) > 40:
             self._state = 'jump'
 
-            # vy_up: positive = moving away from ground (upward in normal gravity).
+            # vy_up positive = moving away from ground (upward in normal gravity).
             vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
 
-            if   vy_up > 400:       self._frame = 0  # absprung   – explosive take-off
-            elif vy_up > 100:       self._frame = 1  # aufstieg   – ascending
-            elif abs(vy_up) <= 100: self._frame = 2  # scheitelpunkt – apex
-            else:                   self._frame = 3  # landung    – falling / landing
+            # Velocity-bound phases – no timer, the frame always matches the
+            # actual ballistic state.
+            if   vy_up >   80: self._frame = 1   # aufstieg     – rising
+            elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex window
+            else:              self._frame = 3   # landung      – falling / landing
+            # Frame 0 (absprung) is only shown in the very first frames of
+            # the jump, when the take-off impulse is still close to maximum:
+            if vy_up > 500:
+                self._frame = 0
             return
 
-        # RUN – grounded und bewegt. Zwei getrennte Zustände, abhängig von der
-        # Bewegungsrichtung. Die Sprites selbst sind bereits in der korrekten
-        # Blickrichtung gezeichnet; es wird nicht geflippt.
-        if self.is_grounded and abs(self.vel.x) > _RUN_SPD_THRESHOLD:
+        # ---------- RUN (grounded and moving horizontally) ----
+        if effective_grounded and abs(self.vel.x) > _RUN_SPD_THRESHOLD:
             new_state = 'run_r' if self.vel.x > 0 else 'run_l'
             if self._state != new_state:
-                # Beim Richtungswechsel den Frame-Counter mitnehmen, damit der
-                # Lauf­rhythmus erhalten bleibt (z.B. mid-stride).
+                # Bei Richtungswechsel den Stride mitnehmen, statt auf Frame 0
+                # zurückzusetzen – die Animation bleibt rhythmisch flüssig.
                 self._frame = self._frame % 3
                 self._frame_timer = 0.0
             self._state = new_state
             return
 
-        # IDLE – default.
+        # ---------- IDLE (default) ----
         self._state = 'idle'
         self._frame = 0
 
@@ -619,11 +634,11 @@ class Player(pygame.sprite.Sprite):
         self.update_animation(dt)
 
     def apply_gravity(self, dt):
-        # Skip gravity entirely when grounded – prevents vel.y from accumulating
-        # each frame and causing a micro-bounce that flickers the landing animation.
-        if self.is_grounded:
-            self.vel.y = 0
-            return
+        # Cap downward velocity to a tiny "stick-to-ground" bias when grounded
+        # so the platform collision (which requires vel.y > 0) keeps detecting
+        # contact every frame. We do NOT zero vel.y here, because that would
+        # stop the player from drifting back onto the platform top after
+        # microscopic float drift and the collision check would lose grip.
         if not self.is_dashing and not self.on_wall:
             keys = pygame.key.get_pressed()
             g = PHYSICS_GRAVITY
@@ -632,6 +647,14 @@ class Player(pygame.sprite.Sprite):
             rising = self.vel.y > 0 if self.game.inverted_gravity else self.vel.y < 0
             current_gravity = g * 0.5 if (keys[pygame.K_SPACE] and rising) else g
             self.vel.y += current_gravity * dt
+
+            # When grounded, clamp |vel.y| to a small bias so we maintain
+            # platform contact without accumulating speed across frames.
+            if self.is_grounded:
+                if self.game.inverted_gravity:
+                    self.vel.y = max(self.vel.y, -60)
+                else:
+                    self.vel.y = min(self.vel.y, 60)
 
     def update_physics(self, dt):
         if self.is_dashing:
@@ -711,6 +734,14 @@ class Player(pygame.sprite.Sprite):
         if self._shot_anim_timer > 0:
             self._shot_anim_timer -= dt
 
+        # Grounded grace: hold the "on ground" state for 3 frames after the
+        # last real ground contact. Smooths over the 1-frame is_grounded blips
+        # that the rect-overlap based platform check can produce.
+        if self.is_grounded:
+            self._ground_grace = 0.05
+        elif self._ground_grace > 0:
+            self._ground_grace = max(0.0, self._ground_grace - dt)
+
         self._update_anim_state()
         self._update_run_timer(dt)
 
@@ -773,10 +804,15 @@ class Player(pygame.sprite.Sprite):
 
         self.prev_on_wall = self.on_wall
 
-        plat_hits = pygame.sprite.spritecollide(self, self.game.platforms, False)
-        for platform in plat_hits:
+        # Use a slightly extended hitbox for the ground check so that a player
+        # sitting motionless on top of a platform (rect.bottom == platform.top,
+        # no overlap) still registers as grounded next frame.
+        ground_probe = self.rect.move(0, 2)
+        for platform in self.game.platforms.sprites():
             if not self.game.inverted_gravity:
-                if self.vel.y > 0 and self.rect.bottom <= platform.rect.bottom + 10:
+                if (self.vel.y >= 0
+                        and ground_probe.colliderect(platform.rect)
+                        and self.rect.bottom <= platform.rect.bottom + 10):
                     self.pos.y = platform.rect.top
                     self.vel.y = 0
                     self.is_grounded = True
@@ -786,8 +822,12 @@ class Player(pygame.sprite.Sprite):
                     self.jump_count = 0
                     self.max_jumps = 2 if not self.streber_mode else 3
                     self.rect.bottom = int(self.pos.y)
+                    break
             else:
-                if self.vel.y < 0 and self.rect.top >= platform.rect.top - 10:
+                probe_up = self.rect.move(0, -2)
+                if (self.vel.y <= 0
+                        and probe_up.colliderect(platform.rect)
+                        and self.rect.top >= platform.rect.top - 10):
                     self.pos.y = platform.rect.bottom + self.height
                     self.vel.y = 0
                     self.is_grounded = True
@@ -797,6 +837,7 @@ class Player(pygame.sprite.Sprite):
                     self.jump_count = 0
                     self.max_jumps = 2 if not self.streber_mode else 3
                     self.rect.bottom = int(self.pos.y)
+                    break
 
         hits = pygame.sprite.spritecollide(self, self.game.boss_bullets, False)
         for projectile in hits:
