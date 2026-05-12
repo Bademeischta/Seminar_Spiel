@@ -10,6 +10,7 @@ def _load_boss_sprite(filename, size):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sprites', filename)
     try:
         img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.flip(img, True, False)
         return pygame.transform.scale(img, size)
     except Exception:
         return None
