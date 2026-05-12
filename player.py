@@ -236,10 +236,11 @@ class Player(pygame.sprite.Sprite):
         if self._shot_anim_timer > 0:
             self._state = 'shoot'
             t = self._shot_anim_timer
-            if   t > 0.20: self._frame = 1   # discharge
-            elif t > 0.13: self._frame = 2   # recoil
-            elif t > 0.07: self._frame = 3   # recovery
-            else:          self._frame = 4   # ready-up
+            # Timer = 0.40 s; each phase gets at least 4-6 frames at 60 fps
+            if   t > 0.30: self._frame = 1   # entladen   – discharge  (0.10 s)
+            elif t > 0.20: self._frame = 2   # rückstoß   – recoil     (0.10 s)
+            elif t > 0.10: self._frame = 3   # recover    – recovery   (0.10 s)
+            else:          self._frame = 4   # readyup    – ready-up   (0.10 s)
             return
 
         if self.is_charging:
@@ -260,15 +261,16 @@ class Player(pygame.sprite.Sprite):
             # vy_up positive = moving away from ground (upward in normal gravity).
             vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
 
-            # Velocity-bound phases – no timer, the frame always matches the
-            # actual ballistic state.
-            if   vy_up >   80: self._frame = 1   # aufstieg     – rising
-            elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex window
-            else:              self._frame = 3   # landung      – falling / landing
-            # Frame 0 (absprung) is only shown in the very first frames of
-            # the jump, when the take-off impulse is still close to maximum:
-            if vy_up > 500:
-                self._frame = 0
+            # Velocity-bound phases – user-specified mapping:
+            #   0  absprung      – explosive take-off burst (vy_up > 500)
+            #   1  aufstieg      – rising AND falling (reused for descent)
+            #   2  scheitelpunkt – apex window (|vy_up| ≤ 80)
+            #   3  landung       – fast descent only (vy_up < -500)
+            if   vy_up >  500: self._frame = 0   # absprung   – explosive take-off
+            elif vy_up >   80: self._frame = 1   # aufstieg   – rising
+            elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex
+            elif vy_up > -500: self._frame = 1   # falling    – reuse aufstieg frame
+            else:              self._frame = 3   # landung    – fast descent
             return
 
         # ---------- RUN (grounded and moving horizontally) ----
@@ -531,7 +533,7 @@ class Player(pygame.sprite.Sprite):
             self.game.all_sprites.add(bullet)
             self.game.player_bullets.add(bullet)
             self.shoot_timer = 0.166
-            self._shot_anim_timer = 0.25
+            self._shot_anim_timer = 0.40
 
     def shoot_charge(self):
         if self.game.challenge and self.game.challenge.name == "Parry Only":
