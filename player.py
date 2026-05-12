@@ -35,16 +35,12 @@ _ANIM_OFFSETS: dict[tuple[str, int], tuple[int, int]] = {
     # --- IDLE ---
     ('idle', 0):   ( 7,  3),
 
-    # --- RUN (6 frames, all drawn in their natural right-facing orientation) ---
-    # Frames 0-5 each have a slightly different foot position.
-    # Without these per-frame x-offsets the figure would jitter left/right
-    # because half the frames were drawn facing the opposite direction.
+    # --- RUN (frames 0-2 only – right-facing half of the sprite sheet) ---
+    # Frames 3-5 face left and are NOT loaded; left-facing run is produced by
+    # flipping frames 0-2 in draw(), which also auto-negates the x-offset.
     ('run',  0):   ( 3,  2),
     ('run',  1):   ( 0,  2),
     ('run',  2):   ( 1,  2),
-    ('run',  3):   (-1,  4),
-    ('run',  4):   ( 3,  3),
-    ('run',  5):   (-1,  2),
 
     # --- JUMP (4 phases) ---
     # Phase 2 (apex) has a large oy because the figure tucks its legs up.
@@ -168,7 +164,6 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0             # current frame index within state
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
-        self._jump_start_timer = 0.0
 
         self._load_sprites()
 
@@ -191,7 +186,9 @@ class Player(pygame.sprite.Sprite):
 
         self._sprites = {
             'idle':  [_load('idle.png')],
-            'run':   [_load(f'run/run_{i}.png') for i in range(6)],
+            # Only the three right-facing frames are loaded.
+            # Left-facing run is produced by flipping these three in draw().
+            'run':   [_load(f'run/run_{i}.png') for i in range(3)],
             'jump':  [_load(f'jump/jump_{i}.png') for i in range(4)],
             'shoot': [_load(f'shoot/shoot_{i}.png') for i in range(5)],
         }
@@ -203,7 +200,7 @@ class Player(pygame.sprite.Sprite):
     def _update_anim_state(self):
         """Determine which animation state and frame should be active."""
 
-        # SHOOT has the highest priority so the action reads clearly.
+        # SHOOT – highest priority so the action reads clearly.
         if self._shot_anim_timer > 0:
             self._state = 'shoot'
             t = self._shot_anim_timer
@@ -218,20 +215,24 @@ class Player(pygame.sprite.Sprite):
             self._frame = 0  # charging pose
             return
 
-        # JUMP – any time the feet leave the ground.
-        if not self.is_grounded:
+        # JUMP – only enter when truly airborne AND moving vertically.
+        # The |vel.y| > 30 guard prevents a 1-frame flicker at the moment of
+        # landing, where gravity has already incremented vel.y but the
+        # collision resolution hasn't zeroed it yet.
+        if not self.is_grounded and abs(self.vel.y) > 30:
             self._state = 'jump'
-            if self._jump_start_timer > 0:
-                self._frame = 0  # take-off
-            else:
-                vy = -self.vel.y if self.game.inverted_gravity else self.vel.y
-                if   vy < -150: self._frame = 1   # rising fast
-                elif abs(vy) <= 150: self._frame = 2  # apex
-                else:            self._frame = 3   # descending
+
+            # vy_up: positive = moving away from ground (upward in normal gravity).
+            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
+
+            if   vy_up > 400:       self._frame = 0  # absprung   – explosive take-off
+            elif vy_up > 100:       self._frame = 1  # aufstieg   – ascending
+            elif abs(vy_up) <= 100: self._frame = 2  # scheitelpunkt – apex
+            else:                   self._frame = 3  # landung    – falling / landing
             return
 
         # RUN – grounded and moving.
-        if abs(self.vel.x) > _RUN_SPD_THRESHOLD:
+        if self.is_grounded and abs(self.vel.x) > _RUN_SPD_THRESHOLD:
             self._state = 'run'
             # frame index is advanced in _update_run_timer(); keep it stable here.
             return
@@ -241,16 +242,16 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0
 
     def _update_run_timer(self, dt: float):
-        """Advance the run cycle frame counter."""
+        """Advance the run cycle frame counter (3 right-facing frames, 0-1-2)."""
         if self._state == 'run':
             self._frame_timer += dt
             if self._frame_timer >= _RUN_FRAME_DURATION:
                 self._frame_timer -= _RUN_FRAME_DURATION
-                self._frame = (self._frame + 1) % len(self._sprites['run'])
+                n = len(self._sprites['run'])  # always 3
+                self._frame = (self._frame + 1) % n
         else:
             self._frame_timer = 0.0
-            if self._state != 'run':
-                self._frame = 0
+            self._frame = 0
 
     # ------------------------------------------------------------------
     # Per-frame draw offset
@@ -383,7 +384,6 @@ class Player(pygame.sprite.Sprite):
             self.jump_count += 1
             self.is_grounded = False
             self.drop_timer = 0
-            self._jump_start_timer = 0.10
 
             self.squash_factor = pygame.math.Vector2(0.8, 1.2)
             self.squash_timer = 0.166
@@ -580,6 +580,11 @@ class Player(pygame.sprite.Sprite):
         self.update_animation(dt)
 
     def apply_gravity(self, dt):
+        # Skip gravity entirely when grounded – prevents vel.y from accumulating
+        # each frame and causing a micro-bounce that flickers the landing animation.
+        if self.is_grounded:
+            self.vel.y = 0
+            return
         if not self.is_dashing and not self.on_wall:
             keys = pygame.key.get_pressed()
             g = PHYSICS_GRAVITY
@@ -666,8 +671,6 @@ class Player(pygame.sprite.Sprite):
     def update_animation(self, dt):
         if self._shot_anim_timer > 0:
             self._shot_anim_timer -= dt
-        if self._jump_start_timer > 0:
-            self._jump_start_timer -= dt
 
         self._update_anim_state()
         self._update_run_timer(dt)
