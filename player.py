@@ -183,15 +183,9 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0             # current frame index within state
         self._frame_timer = 0.0     # accumulator for run frame advances
         self._shot_anim_timer = 0.0 # post-shot animation clock
-
         self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animation
         self._landing_timer = 0.0   # forces jump_3 (touch-down frame) for one brief moment
 
-        self._takeoff_timer = 0.0
-        self._landing_timer = 0.0
-        self._bullet_queued = None
-        self._ground_grace = 0.0    # smooths 1-frame is_grounded blips for the animatio
-     
         self._load_sprites()
 
     # ------------------------------------------------------------------
@@ -231,37 +225,18 @@ class Player(pygame.sprite.Sprite):
     def _update_anim_state(self):
         """Determine which animation state and frame should be active.
 
-
-        Priority: shoot > jump > run > idle. The shoot timer fully locks
-        the state until it elapses, so movement input cannot cut off the
-        recoil/recovery frames. The jump branch is gated by an effective
-        grounded check (is_grounded OR within ground-grace window) AND by
-        a real vertical velocity, so a single-frame float blip can never
-        flicker the figure between idle and jump.
-        """
-
-
-        Priority: shoot > landing > takeoff > airborne > run > idle.
+        Priority: shoot > landing > jump > run > idle.
         """
 
         # ---------- SHOOT (highest priority – locks all transitions) ----------
         if self._shot_anim_timer > 0:
             self._state = 'shoot'
             t = self._shot_anim_timer
-            # Timer = 0.40 s; each phase gets at least 4-6 frames at 60 fps
-            if   t > 0.30: self._frame = 1   # entladen   – discharge  (0.10 s)
-            elif t > 0.20: self._frame = 2   # rückstoß   – recoil     (0.10 s)
-            elif t > 0.10: self._frame = 3   # recover    – recovery   (0.10 s)
-            else:          self._frame = 4   # readyup    – ready-up   (0.10 s)
-
-            # Sequence: shoot_0 -> shoot_1 -> shoot_2 -> shoot_3 -> shoot_4
-            # Total timer 0.40s. 5 frames, each approx 0.08s.
-            if   t > 0.32: self._frame = 0   # aufladen
-            elif t > 0.24: self._frame = 1   # entladen
-            elif t > 0.16: self._frame = 2   # rückstoß
-            elif t > 0.08: self._frame = 3   # recover
-            else:          self._frame = 4   # readyup
-
+            # Timer = 0.40 s; each phase gets 0.10 s (~6 frames at 60 fps)
+            if   t > 0.30: self._frame = 1   # entladen   – discharge
+            elif t > 0.20: self._frame = 2   # rückstoß   – recoil
+            elif t > 0.10: self._frame = 3   # recover    – recovery
+            else:          self._frame = 4   # readyup    – ready-up
             return
 
         if self.is_charging:
@@ -270,45 +245,8 @@ class Player(pygame.sprite.Sprite):
             return
 
         # Effective grounded = is_grounded OR within the 3-frame grace window.
-
-        # This absorbs the 1-frame oscillation that the platform collision
-        # check can produce when the player is sitting motionless on a
-        # platform edge.
+        # Absorbs single-frame is_grounded blips from edge cases.
         effective_grounded = self.is_grounded or self._ground_grace > 0
-
-        # ---------- JUMP (only when truly airborne AND moving vertically) ----
-        if not effective_grounded and abs(self.vel.y) > 40:
-
-        effective_grounded = self.is_grounded or self._ground_grace > 0
-
-        # ---------- LANDING (high priority on ground) ----------
-        if effective_grounded and self._landing_timer > 0:
-            self._state = 'jump'
-            self._frame = 3  # landing frame
-            return
-
-        # ---------- TAKEOFF (short fixed duration) ----------
-        if self._takeoff_timer > 0:
-
-            self._state = 'jump'
-            self._frame = 0  # takeoff frame
-            return
-
-
-            # vy_up positive = moving away from ground (upward in normal gravity).
-            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
-
-            # Velocity-bound phases – user-specified mapping:
-            #   0  absprung      – explosive take-off burst (vy_up > 500)
-            #   1  aufstieg      – rising AND falling (reused for descent)
-            #   2  scheitelpunkt – apex window (|vy_up| ≤ 80)
-            #   3  landung       – fast descent only (vy_up < -500)
-            if   vy_up >  500: self._frame = 0   # absprung   – explosive take-off
-            elif vy_up >   80: self._frame = 1   # aufstieg   – rising
-            elif vy_up >  -80: self._frame = 2   # scheitelpunkt – apex
-            elif vy_up > -500: self._frame = 1   # falling    – reuse aufstieg frame
-            else:              self._frame = 3   # landung    – fast descent
-            return
 
         # ---------- LANDING TOUCH-DOWN (brief after hitting ground) ----------
         # Shows jump_3 for _landing_timer seconds so the touchdown frame is
@@ -316,20 +254,6 @@ class Player(pygame.sprite.Sprite):
         if self._landing_timer > 0:
             self._state = 'jump'
             self._frame = 3
-
-        # ---------- AIRBORNE (Rising / Apex / Falling) ----------
-        if not effective_grounded:
-            self._state = 'jump'
-            # vy_up positive = moving away from ground (upward in normal gravity).
-            vy_up = -self.vel.y if not self.game.inverted_gravity else self.vel.y
-
-            if vy_up > 40:
-                self._frame = 1  # aufstieg
-            elif vy_up < -40:
-                self._frame = 1  # falling (reuse aufstieg as requested)
-            else:
-                self._frame = 2  # apex
-
             return
 
         # ---------- JUMP (only when truly airborne AND moving vertically) ----
