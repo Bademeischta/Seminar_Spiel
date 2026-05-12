@@ -35,12 +35,20 @@ _ANIM_OFFSETS: dict[tuple[str, int], tuple[int, int]] = {
     # --- IDLE ---
     ('idle', 0):   ( 7,  3),
 
-    # --- RUN (frames 0-2 only – right-facing half of the sprite sheet) ---
-    # Frames 3-5 face left and are NOT loaded; left-facing run is produced by
-    # flipping frames 0-2 in draw(), which also auto-negates the x-offset.
-    ('run',  0):   ( 3,  2),
-    ('run',  1):   ( 0,  2),
-    ('run',  2):   ( 1,  2),
+    # --- RUN (alle 6 Frames, alle rechtsschauend) ---
+    # Vollständiger bilateraler Laufzyklus:
+    #   0 Kontakt R (Tiefpunkt)  →  1 Übergang R→L  →  2 Passage R (Hochpunkt)
+    #   3 Kontakt L (Tiefpunkt)  →  4 Übergang L→R  →  5 Passage L (Hochpunkt)
+    # Für Laufen nach links werden alle 6 Frames in draw() horizontal gespiegelt;
+    # der ox-Wert wird dabei automatisch negiert (sign * ox in _get_draw_offset).
+    # oy korrigiert die variierenden Fußhöhen (Frame 3 hat oy=4, weil die Füße
+    # in diesem Frame 2 Canvas-Pixel höher stehen als im Durchschnitt).
+    ('run',  0):   ( 3,  2),   # Kontakt R  – Füße 3px links von Canvas-Mitte
+    ('run',  1):   ( 0,  2),   # Übergang   – Füße genau in Canvas-Mitte
+    ('run',  2):   ( 1,  2),   # Passage R  – Füße 1px links
+    ('run',  3):   (-1,  4),   # Kontakt L  – Füße 1px rechts, 2px höher (oy=4)
+    ('run',  4):   ( 3,  3),   # Übergang   – Füße 3px links, 1px höher
+    ('run',  5):   (-1,  2),   # Passage L  – Füße 1px rechts
 
     # --- JUMP (4 phases) ---
     # Phase 2 (apex) has a large oy because the figure tucks its legs up.
@@ -186,9 +194,7 @@ class Player(pygame.sprite.Sprite):
 
         self._sprites = {
             'idle':  [_load('idle.png')],
-            # Only the three right-facing frames are loaded.
-            # Left-facing run is produced by flipping these three in draw().
-            'run':   [_load(f'run/run_{i}.png') for i in range(3)],
+            'run':   [_load(f'run/run_{i}.png') for i in range(6)],
             'jump':  [_load(f'jump/jump_{i}.png') for i in range(4)],
             'shoot': [_load(f'shoot/shoot_{i}.png') for i in range(5)],
         }
@@ -242,13 +248,12 @@ class Player(pygame.sprite.Sprite):
         self._frame = 0
 
     def _update_run_timer(self, dt: float):
-        """Advance the run cycle frame counter (3 right-facing frames, 0-1-2)."""
+        """Advance the run cycle frame counter (6-frame bilateral cycle)."""
         if self._state == 'run':
             self._frame_timer += dt
             if self._frame_timer >= _RUN_FRAME_DURATION:
                 self._frame_timer -= _RUN_FRAME_DURATION
-                n = len(self._sprites['run'])  # always 3
-                self._frame = (self._frame + 1) % n
+                self._frame = (self._frame + 1) % len(self._sprites['run'])
         else:
             self._frame_timer = 0.0
             self._frame = 0
